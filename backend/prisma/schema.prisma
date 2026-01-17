@@ -1,0 +1,434 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// MULTI-TENANT: RESTAURANTES
+// ============================================================================
+
+model Restaurant {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique  // URL amigável: /r/casa-do-porco
+  description String?
+  logoUrl     String?
+  bannerUrl   String?
+  
+  // Endereço
+  address     String
+  city        String
+  state       String
+  zipCode     String
+  latitude    Float?
+  longitude   Float?
+  
+  // Contato
+  phone       String
+  email       String
+  whatsapp    String?
+  
+  // Configurações
+  settings    Json     @default("{}")  // Horários, cores, etc
+  isActive    Boolean  @default(true)
+  
+  // Plano/Assinatura
+  plan        RestaurantPlan @default(FREE)
+  planExpiresAt DateTime?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relacionamentos
+  users       User[]
+  tables      Table[]
+  categories  MenuCategory[]
+  menuItems   MenuItem[]
+  orders      Order[]
+  
+  @@index([slug])
+  @@index([city, state])
+}
+
+enum RestaurantPlan {
+  FREE        // Até 5 mesas, funcionalidades básicas
+  STARTER     // Até 15 mesas
+  PROFESSIONAL // Até 50 mesas + relatórios
+  ENTERPRISE  // Ilimitado + API + suporte
+}
+
+// ============================================================================
+// USUÁRIOS E AUTENTICAÇÃO
+// ============================================================================
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String
+  password     String
+  phone        String?
+  
+  role         UserRole @default(WAITER)
+  isActive     Boolean  @default(true)
+  
+  // Multi-tenant
+  restaurantId String?
+  restaurant   Restaurant? @relation(fields: [restaurantId], references: [id])
+  
+  // Super admin não tem restaurante vinculado
+  isSuperAdmin Boolean @default(false)
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  // Relacionamentos
+  refreshTokens RefreshToken[]
+  orderLogs     OrderLog[]
+  
+  @@unique([email])
+  @@index([restaurantId])
+}
+
+enum UserRole {
+  SUPER_ADMIN  // Gerencia toda a plataforma
+  ADMIN        // Dono/gerente do restaurante
+  MANAGER      // Supervisor
+  CASHIER      // Caixa - fecha contas
+  KITCHEN      // Cozinha - vê pedidos para preparar
+  WAITER       // Garçom - gerencia mesas
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  
+  @@index([userId])
+  @@index([token])
+}
+
+// ============================================================================
+// MESAS E SESSÕES
+// ============================================================================
+
+model Table {
+  id           String      @id @default(uuid())
+  number       Int                           // Número da mesa: 1, 2, 3...
+  name         String?                       // Nome opcional: "Varanda 1"
+  capacity     Int         @default(4)       // Capacidade de pessoas
+  
+  qrCode       String      @unique           // Código único para QR
+  qrCodeUrl    String?                       // URL do QR gerado
+  
+  status       TableStatus @default(INACTIVE)
+  
+  // Multi-tenant
+  restaurantId String
+  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id])
+  
+  // Localização dentro do restaurante
+  section      String?     // "Salão Principal", "Varanda", "Rooftop"
+  
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  
+  // Relacionamentos
+  sessions     TableSession[]
+  orders       Order[]
+  
+  @@unique([restaurantId, number])
+  @@index([restaurantId])
+  @@index([qrCode])
+}
+
+enum TableStatus {
+  INACTIVE       // Mesa não está em uso
+  ACTIVE         // Garçom ativou, pronta para receber clientes
+  OCCUPIED       // Tem clientes ativos
+  BILL_REQUESTED // Conta foi solicitada
+  CLOSED         // Fechada, aguardando limpeza
+}
+
+model TableSession {
+  id                String   @id @default(uuid())
+  
+  // Identificação do cliente
+  customerName      String
+  customerPhone     String
+  
+  // Segurança
+  deviceFingerprint String   // Hash do dispositivo
+  ipAddress         String
+  userAgent         String
+  
+  // Verificação
+  isVerified        Boolean  @default(false)
+  verifiedAt        DateTime?
+  
+  // Status
+  isActive          Boolean  @default(true)
+  
+  // Relacionamentos
+  tableId           String
+  table             Table    @relation(fields: [tableId], references: [id])
+  
+  createdAt         DateTime @default(now())
+  expiresAt         DateTime // Expira junto com a mesa
+  
+  // Pedidos feitos por esta sessão
+  orders            Order[]
+  
+  @@index([tableId])
+  @@index([customerPhone])
+  @@index([deviceFingerprint])
+}
+
+// Códigos de verificação temporários (pode usar Redis também)
+model VerificationCode {
+  id           String   @id @default(uuid())
+  phone        String
+  code         String   // 6 dígitos
+  tableId      String
+  restaurantId String
+  
+  attempts     Int      @default(0)
+  maxAttempts  Int      @default(3)
+  
+  createdAt    DateTime @default(now())
+  expiresAt    DateTime // 5 minutos
+  usedAt       DateTime?
+  
+  @@index([phone, code])
+  @@index([expiresAt])
+}
+
+// ============================================================================
+// CARDÁPIO
+// ============================================================================
+
+model MenuCategory {
+  id           String     @id @default(uuid())
+  name         String     // "Entradas", "Pratos Principais"
+  description  String?
+  imageUrl     String?
+  sortOrder    Int        @default(0)
+  isActive     Boolean    @default(true)
+  
+  // Multi-tenant
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  
+  // Relacionamentos
+  items        MenuItem[]
+  
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  
+  @@index([restaurantId])
+}
+
+model MenuItem {
+  id           String       @id @default(uuid())
+  name         String
+  description  String?
+  price        Decimal      @db.Decimal(10, 2)
+  
+  imageUrl     String?
+  
+  // Flags
+  isAvailable  Boolean      @default(true)
+  isFeatured   Boolean      @default(false)
+  isVegan      Boolean      @default(false)
+  isVegetarian Boolean      @default(false)
+  isGlutenFree Boolean      @default(false)
+  isSpicy      Boolean      @default(false)
+  
+  // Tempo de preparo estimado (minutos)
+  prepTime     Int?
+  
+  // Ordenação
+  sortOrder    Int          @default(0)
+  
+  // Relacionamentos
+  categoryId   String
+  category     MenuCategory @relation(fields: [categoryId], references: [id])
+  
+  restaurantId String
+  restaurant   Restaurant   @relation(fields: [restaurantId], references: [id])
+  
+  // Extras/Adicionais
+  extras       MenuItemExtra[]
+  
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  
+  @@index([restaurantId])
+  @@index([categoryId])
+}
+
+model MenuItemExtra {
+  id         String   @id @default(uuid())
+  name       String   // "Bacon extra", "Queijo cheddar"
+  price      Decimal  @db.Decimal(10, 2)
+  isRequired Boolean  @default(false)
+  
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  
+  @@index([menuItemId])
+}
+
+// ============================================================================
+// PEDIDOS
+// ============================================================================
+
+model Order {
+  id           String      @id @default(uuid())
+  orderNumber  Int         // Número sequencial do dia
+  
+  status       OrderStatus @default(PENDING)
+  
+  // Totais
+  subtotal     Decimal     @db.Decimal(10, 2)
+  discount     Decimal     @default(0) @db.Decimal(10, 2)
+  total        Decimal     @db.Decimal(10, 2)
+  
+  // Observações gerais
+  notes        String?
+  
+  // Relacionamentos
+  tableId      String
+  table        Table       @relation(fields: [tableId], references: [id])
+  
+  sessionId    String
+  session      TableSession @relation(fields: [sessionId], references: [id])
+  
+  restaurantId String
+  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id])
+  
+  // Itens do pedido
+  items        OrderItem[]
+  
+  // Histórico de alterações
+  logs         OrderLog[]
+  
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  
+  @@index([restaurantId, createdAt])
+  @@index([tableId])
+  @@index([status])
+}
+
+enum OrderStatus {
+  PENDING      // Aguardando confirmação
+  CONFIRMED    // Confirmado pela cozinha
+  PREPARING    // Em preparo
+  READY        // Pronto para servir
+  DELIVERED    // Entregue na mesa
+  CANCELLED    // Cancelado
+}
+
+model OrderItem {
+  id          String   @id @default(uuid())
+  
+  name        String   // Snapshot do nome (caso mude no menu)
+  price       Decimal  @db.Decimal(10, 2)
+  quantity    Int
+  
+  notes       String?  // "Sem cebola", "Bem passado"
+  
+  // Extras selecionados
+  extras      Json     @default("[]")  // [{name, price}]
+  
+  // Status individual do item
+  status      OrderItemStatus @default(PENDING)
+  
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  menuItemId  String?  // Referência ao item original (pode ser null se deletado)
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([orderId])
+}
+
+enum OrderItemStatus {
+  PENDING
+  PREPARING
+  READY
+  DELIVERED
+  CANCELLED
+}
+
+model OrderLog {
+  id        String   @id @default(uuid())
+  action    String   // "STATUS_CHANGED", "ITEM_ADDED", "ITEM_CANCELLED"
+  details   Json     // Detalhes da ação
+  
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  
+  userId    String?  // Quem fez a ação (staff)
+  user      User?    @relation(fields: [userId], references: [id])
+  
+  createdAt DateTime @default(now())
+  
+  @@index([orderId])
+}
+
+// ============================================================================
+// CONTA / FECHAMENTO
+// ============================================================================
+
+model Bill {
+  id           String      @id @default(uuid())
+  billNumber   Int         // Número da conta
+  
+  // Totais
+  subtotal     Decimal     @db.Decimal(10, 2)
+  serviceCharge Decimal    @default(0) @db.Decimal(10, 2) // Taxa de serviço
+  discount     Decimal     @default(0) @db.Decimal(10, 2)
+  total        Decimal     @db.Decimal(10, 2)
+  
+  status       BillStatus  @default(OPEN)
+  
+  // Pagamento
+  paymentMethod String?    // "CASH", "CREDIT", "DEBIT", "PIX"
+  paidAt       DateTime?
+  
+  // Relacionamentos
+  tableId      String
+  restaurantId String
+  
+  // IDs das sessões que participaram
+  sessionIds   String[]    // Array de UUIDs
+  
+  // IDs dos pedidos incluídos
+  orderIds     String[]    // Array de UUIDs
+  
+  createdAt    DateTime    @default(now())
+  closedAt     DateTime?
+  
+  @@index([restaurantId, createdAt])
+  @@index([tableId])
+}
+
+enum BillStatus {
+  OPEN         // Conta aberta
+  REQUESTED    // Cliente pediu a conta
+  PROCESSING   // Caixa processando
+  PAID         // Paga
+  CANCELLED    // Cancelada
+}
+
