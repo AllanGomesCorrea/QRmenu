@@ -126,7 +126,7 @@ qrmenu/
 ├── admin/            # Frontend admin (React + Vite)
 │   └── src/
 ├── scripts/          # Scripts de automação
-└── docker-compose.yml
+└── docker compose.yml
 ```
 
 ## 📝 Scripts Disponíveis

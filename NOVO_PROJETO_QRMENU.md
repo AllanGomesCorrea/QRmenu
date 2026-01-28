@@ -794,8 +794,8 @@ enum BillStatus {
 
 ```
 qrmenu-saas/
-├── docker-compose.yml
-├── docker-compose.prod.yml
+├── docker compose.yml
+├── docker compose.prod.yml
 ├── .env.example
 ├── README.md
 ├── DEPLOY.md
@@ -1115,7 +1115,7 @@ qrmenu-saas/
 ### Desenvolvimento
 
 ```yaml
-# docker-compose.yml
+# docker compose.yml
 version: '3.8'
 
 services:
@@ -1235,7 +1235,7 @@ volumes:
 ### Produção
 
 ```yaml
-# docker-compose.prod.yml
+# docker compose.prod.yml
 version: '3.8'
 
 services:
@@ -1606,22 +1606,22 @@ font-family: 'Inter', sans-serif;
 
 ```bash
 # Iniciar desenvolvimento
-docker-compose up -d
+docker compose up -d
 
 # Ver logs
-docker-compose logs -f backend
+docker compose logs -f backend
 
 # Rodar migrations
-docker-compose exec backend npx prisma migrate dev
+docker compose exec backend npx prisma migrate dev
 
 # Seed do banco
-docker-compose exec backend npx prisma db seed
+docker compose exec backend npx prisma db seed
 
 # Build para produção
-docker-compose -f docker-compose.prod.yml build
+docker compose -f docker compose.prod.yml build
 
 # Deploy
-docker-compose -f docker-compose.prod.yml up -d
+docker compose -f docker compose.prod.yml up -d
 ```
 
 ---
