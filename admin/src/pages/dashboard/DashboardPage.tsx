@@ -12,7 +12,7 @@ import {
   AlertCircle,
   Loader2,
 } from 'lucide-react';
-import { useOrders, useOrderStats, Order } from '@/hooks/useOrders';
+import { useOrders, useTodayStats, Order } from '@/hooks/useOrders';
 import { useTableStats } from '@/hooks/useTables';
 
 const statusColors: Record<string, string> = {
@@ -20,7 +20,7 @@ const statusColors: Record<string, string> = {
   'CONFIRMED': 'bg-indigo-100 text-indigo-800',
   'PREPARING': 'bg-amber-100 text-amber-800',
   'READY': 'bg-green-100 text-green-800',
-  'DELIVERED': 'bg-gray-100 text-gray-800',
+  'PAID': 'bg-emerald-100 text-emerald-800',
   'CANCELLED': 'bg-red-100 text-red-800',
 };
 
@@ -29,7 +29,7 @@ const statusLabels: Record<string, string> = {
   'CONFIRMED': 'Confirmado',
   'PREPARING': 'Preparando',
   'READY': 'Pronto',
-  'DELIVERED': 'Entregue',
+  'PAID': 'Pago',
   'CANCELLED': 'Cancelado',
 };
 
@@ -212,7 +212,7 @@ export default function DashboardPage() {
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
   
   const { data: ordersData, isLoading: loadingOrders } = useOrders({ limit: 10 });
-  const { data: stats, isLoading: loadingStats } = useOrderStats();
+  const { data: stats, isLoading: loadingStats } = useTodayStats();
   const { data: tableStats } = useTableStats();
 
   const toggleOrder = (orderId: string) => {

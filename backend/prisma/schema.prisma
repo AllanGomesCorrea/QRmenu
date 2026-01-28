@@ -305,6 +305,13 @@ model Order {
   // Observações gerais
   notes        String?
   
+  // Timestamps de status (para métricas)
+  confirmedAt  DateTime?   // Quando foi confirmado pela cozinha
+  preparingAt  DateTime?   // Quando começou o preparo
+  readyAt      DateTime?   // Quando ficou pronto
+  paidAt       DateTime?   // Quando foi pago
+  cancelledAt  DateTime?   // Quando foi cancelado
+  
   // Relacionamentos
   tableId      String
   table        Table       @relation(fields: [tableId], references: [id])
@@ -334,7 +341,7 @@ enum OrderStatus {
   CONFIRMED    // Confirmado pela cozinha
   PREPARING    // Em preparo
   READY        // Pronto para servir
-  DELIVERED    // Entregue na mesa
+  PAID         // Pago e finalizado
   CANCELLED    // Cancelado
 }
 
@@ -367,7 +374,6 @@ enum OrderItemStatus {
   PENDING
   PREPARING
   READY
-  DELIVERED
   CANCELLED
 }
 

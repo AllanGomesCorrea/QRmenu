@@ -166,11 +166,7 @@ export class OrdersService {
         },
       },
       include: {
-        items: {
-          where: {
-            status: { not: OrderItemStatus.DELIVERED },
-          },
-        },
+        items: true,
         table: {
           select: { id: true, number: true, name: true },
         },
@@ -235,6 +231,7 @@ export class OrdersService {
         include: {
           items: true,
           table: { select: { id: true, number: true, name: true } },
+          session: { select: { customerName: true, customerPhone: true } },
         },
         orderBy: { createdAt: 'desc' },
         take: options?.limit || 50,
@@ -293,11 +290,15 @@ export class OrdersService {
     // Validate status transition
     this.validateStatusTransition(order.status, dto.status);
 
+    // Build timestamp updates based on status
+    const timestampUpdates = this.getTimestampForStatus(dto.status);
+
     // Update order
     const updatedOrder = await this.prisma.order.update({
       where: { id: orderId },
       data: {
         status: dto.status,
+        ...timestampUpdates,
         logs: {
           create: {
             action: `STATUS_CHANGED`,
@@ -319,7 +320,7 @@ export class OrdersService {
     // If order is ready, all items should be ready
     if (dto.status === OrderStatus.READY) {
       await this.prisma.orderItem.updateMany({
-        where: { orderId, status: { not: OrderItemStatus.DELIVERED } },
+        where: { orderId, status: { not: OrderItemStatus.READY } },
         data: { status: OrderItemStatus.READY },
       });
     }
@@ -332,6 +333,28 @@ export class OrdersService {
     });
 
     return updatedOrder;
+  }
+
+  /**
+   * Get timestamp field to update based on status
+   */
+  private getTimestampForStatus(status: OrderStatus): Record<string, Date> {
+    const now = new Date();
+    
+    switch (status) {
+      case OrderStatus.CONFIRMED:
+        return { confirmedAt: now };
+      case OrderStatus.PREPARING:
+        return { preparingAt: now };
+      case OrderStatus.READY:
+        return { readyAt: now };
+      case OrderStatus.PAID:
+        return { paidAt: now };
+      case OrderStatus.CANCELLED:
+        return { cancelledAt: now };
+      default:
+        return {};
+    }
   }
 
   /**
@@ -378,24 +401,16 @@ export class OrdersService {
       },
     });
 
-    // Check if all items are ready/delivered to update order status
+    // Check if all items are ready to update order status to READY
     const allItems = await this.prisma.orderItem.findMany({
       where: { orderId },
     });
 
     const allReady = allItems.every(
-      (i) => i.status === OrderItemStatus.READY || i.status === OrderItemStatus.DELIVERED,
+      (i) => i.status === OrderItemStatus.READY,
     );
-    const allDelivered = allItems.every((i) => i.status === OrderItemStatus.DELIVERED);
 
-    if (allDelivered && order.status !== OrderStatus.DELIVERED) {
-      await this.updateOrderStatus(
-        orderId,
-        restaurantId,
-        { status: OrderStatus.DELIVERED },
-        userId,
-      );
-    } else if (allReady && order.status === OrderStatus.PREPARING) {
+    if (allReady && order.status === OrderStatus.PREPARING) {
       await this.updateOrderStatus(
         orderId,
         restaurantId,
@@ -431,7 +446,7 @@ export class OrdersService {
       throw new NotFoundException('Pedido não encontrado');
     }
 
-    if (order.status === OrderStatus.DELIVERED || order.status === OrderStatus.CANCELLED) {
+    if (order.status === OrderStatus.PAID || order.status === OrderStatus.CANCELLED) {
       throw new BadRequestException('Não é possível cancelar este pedido');
     }
 
@@ -439,6 +454,7 @@ export class OrdersService {
       where: { id: orderId },
       data: {
         status: OrderStatus.CANCELLED,
+        cancelledAt: new Date(),
         logs: {
           create: {
             action: 'CANCELLED',
@@ -450,6 +466,12 @@ export class OrdersService {
         items: true,
         table: true,
       },
+    });
+
+    // Update all items to cancelled
+    await this.prisma.orderItem.updateMany({
+      where: { orderId },
+      data: { status: OrderItemStatus.CANCELLED },
     });
 
     // Publish event
@@ -464,31 +486,49 @@ export class OrdersService {
 
   /**
    * Get order statistics for dashboard
+   * 
+   * Quando startDate/endDate são passados, filtra pedidos PAGOS no período
+   * usando paidAt para consistência com os Relatórios.
    */
   async getOrderStats(restaurantId: string, startDate?: Date, endDate?: Date) {
-    const where: any = { restaurantId };
+    // Base filter
+    const baseWhere: any = { restaurantId };
+    
+    // Filter for paid orders in period (for revenue)
+    const paidWhere: any = { 
+      restaurantId, 
+      status: OrderStatus.PAID,
+    };
 
     if (startDate || endDate) {
-      where.createdAt = {};
-      if (startDate) where.createdAt.gte = startDate;
-      if (endDate) where.createdAt.lte = endDate;
+      paidWhere.paidAt = {};
+      if (startDate) paidWhere.paidAt.gte = startDate;
+      if (endDate) paidWhere.paidAt.lte = endDate;
+    }
+
+    // Filter for active orders (for counts) - using createdAt for "today's activity"
+    const activeWhere: any = { restaurantId };
+    if (startDate || endDate) {
+      activeWhere.createdAt = {};
+      if (startDate) activeWhere.createdAt.gte = startDate;
+      if (endDate) activeWhere.createdAt.lte = endDate;
     }
 
     const [
-      totalOrders,
+      totalOrders, // Orders paid in period
       pendingOrders,
       preparingOrders,
       completedOrders,
       cancelledOrders,
       revenue,
     ] = await Promise.all([
-      this.prisma.order.count({ where }),
-      this.prisma.order.count({ where: { ...where, status: OrderStatus.PENDING } }),
-      this.prisma.order.count({ where: { ...where, status: OrderStatus.PREPARING } }),
-      this.prisma.order.count({ where: { ...where, status: OrderStatus.DELIVERED } }),
-      this.prisma.order.count({ where: { ...where, status: OrderStatus.CANCELLED } }),
+      this.prisma.order.count({ where: paidWhere }), // Count paid orders
+      this.prisma.order.count({ where: { ...activeWhere, status: OrderStatus.PENDING } }),
+      this.prisma.order.count({ where: { ...activeWhere, status: OrderStatus.PREPARING } }),
+      this.prisma.order.count({ where: paidWhere }), // Same as totalOrders for paid
+      this.prisma.order.count({ where: { ...activeWhere, status: OrderStatus.CANCELLED } }),
       this.prisma.order.aggregate({
-        where: { ...where, status: OrderStatus.DELIVERED },
+        where: paidWhere,
         _sum: { total: true },
       }),
     ]);
@@ -530,11 +570,12 @@ export class OrdersService {
       [OrderStatus.PENDING]: [OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.CANCELLED],
       // CONFIRMED pode ir para PREPARING ou ser cancelado
       [OrderStatus.CONFIRMED]: [OrderStatus.PREPARING, OrderStatus.CANCELLED],
-      // PREPARING pode ir direto para DELIVERED (Pronto!) ou para READY, ou ser cancelado
-      [OrderStatus.PREPARING]: [OrderStatus.READY, OrderStatus.DELIVERED, OrderStatus.CANCELLED],
-      // READY pode ir para DELIVERED
-      [OrderStatus.READY]: [OrderStatus.DELIVERED],
-      [OrderStatus.DELIVERED]: [],
+      // PREPARING pode ir para READY ou ser cancelado
+      [OrderStatus.PREPARING]: [OrderStatus.READY, OrderStatus.CANCELLED],
+      // READY fica até o caixa confirmar pagamento (PAID via releaseTable)
+      [OrderStatus.READY]: [OrderStatus.PAID],
+      // Estados finais
+      [OrderStatus.PAID]: [],
       [OrderStatus.CANCELLED]: [],
     };
 

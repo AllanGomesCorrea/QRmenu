@@ -10,11 +10,16 @@ import { RedisService } from '../redis/redis.service';
 import { VerificationService } from './verification.service';
 import { CreateSessionDto, VerifyCodeDto, RequestCodeDto } from './dto';
 import { ConfigService } from '@nestjs/config';
+import {
+  RestaurantSettings,
+  DEFAULT_RESTAURANT_SETTINGS,
+  calculateDistance,
+  isRestaurantOpen,
+} from '../common/types/restaurant-settings';
 
 @Injectable()
 export class SessionsService {
   private readonly sessionTimeout: number;
-  private readonly maxSessionsPerTable: number;
 
   constructor(
     private prisma: PrismaService,
@@ -24,7 +29,84 @@ export class SessionsService {
   ) {
     // Session timeout in hours (default 4 hours)
     this.sessionTimeout = 4 * 60 * 60 * 1000; // 4 hours in ms
-    this.maxSessionsPerTable = this.configService.get<number>('security.maxSessionsPerTable', 10);
+  }
+
+  /**
+   * Parse restaurant settings from JSON
+   */
+  private getSettings(settingsJson: any): RestaurantSettings {
+    if (!settingsJson || typeof settingsJson !== 'object') {
+      return DEFAULT_RESTAURANT_SETTINGS;
+    }
+    return { ...DEFAULT_RESTAURANT_SETTINGS, ...settingsJson };
+  }
+
+  /**
+   * Validate operating hours
+   */
+  private validateOperatingHours(settings: RestaurantSettings): void {
+    const { isOpen, message } = isRestaurantOpen(settings);
+    if (!isOpen) {
+      throw new BadRequestException(
+        message || 'Restaurante fechado no momento. Tente novamente no horário de funcionamento.',
+      );
+    }
+  }
+
+  /**
+   * Validate geolocation (client must be near restaurant)
+   */
+  private validateGeolocation(
+    settings: RestaurantSettings,
+    restaurantLat: number | null,
+    restaurantLng: number | null,
+    clientLat?: number,
+    clientLng?: number,
+  ): void {
+    // Skip if geolocation is disabled
+    if (!settings.geolocation?.enabled) {
+      return;
+    }
+
+    // Skip if restaurant doesn't have coordinates
+    if (!restaurantLat || !restaurantLng) {
+      return;
+    }
+
+    // If client didn't send location, warn but allow (some browsers block location)
+    if (clientLat === undefined || clientLng === undefined) {
+      // For now, we'll allow without location but log it
+      console.warn('Client did not provide geolocation');
+      return;
+    }
+
+    const distance = calculateDistance(
+      restaurantLat,
+      restaurantLng,
+      clientLat,
+      clientLng,
+    );
+
+    const maxRadius = settings.geolocation.radiusMeters || 200;
+
+    if (distance > maxRadius) {
+      throw new BadRequestException(
+        `Você precisa estar no restaurante para fazer pedidos. ` +
+        `Distância atual: ${Math.round(distance)}m (máximo: ${maxRadius}m).`,
+      );
+    }
+  }
+
+  /**
+   * Validate session limit based on table capacity
+   */
+  private validateSessionLimit(currentSessions: number, tableCapacity: number): void {
+    if (currentSessions >= tableCapacity) {
+      throw new BadRequestException(
+        `Mesa atingiu o limite de ${tableCapacity} pessoas. ` +
+        `Não é possível adicionar mais clientes.`,
+      );
+    }
   }
 
   /**
@@ -41,6 +123,9 @@ export class SessionsService {
             slug: true,
             logoUrl: true,
             isActive: true,
+            settings: true,
+            latitude: true,
+            longitude: true,
           },
         },
         _count: {
@@ -56,6 +141,12 @@ export class SessionsService {
     if (!table.restaurant.isActive) {
       throw new BadRequestException('Restaurante não está disponível');
     }
+
+    // Get restaurant settings
+    const settings = this.getSettings(table.restaurant.settings);
+
+    // Check operating hours
+    const operatingStatus = isRestaurantOpen(settings);
 
     // Check if table is active (waiter must activate it)
     if (table.status === TableStatus.INACTIVE) {
@@ -76,10 +167,20 @@ export class SessionsService {
         number: table.number,
         name: table.name,
         status: table.status,
+        capacity: table.capacity,
         activeSessions: table._count.sessions,
       },
-      restaurant: table.restaurant,
-      canJoin: table._count.sessions < this.maxSessionsPerTable,
+      restaurant: {
+        ...table.restaurant,
+        latitude: table.restaurant.latitude,
+        longitude: table.restaurant.longitude,
+      },
+      operatingStatus,
+      geolocationRequired: settings.geolocation?.enabled && 
+        !!table.restaurant.latitude && 
+        !!table.restaurant.longitude,
+      geolocationRadius: settings.geolocation?.radiusMeters || 200,
+      canJoin: table._count.sessions < table.capacity && operatingStatus.isOpen,
     };
   }
 
@@ -159,15 +260,28 @@ export class SessionsService {
       throw new NotFoundException('Mesa não encontrada');
     }
 
+    // Get restaurant settings
+    const settings = this.getSettings(table.restaurant.settings);
+
     // Check table status
     if (table.status === TableStatus.INACTIVE || table.status === TableStatus.CLOSED) {
       throw new BadRequestException('Mesa não está disponível');
     }
 
-    // Check max sessions
-    if (table._count.sessions >= this.maxSessionsPerTable) {
-      throw new BadRequestException('Mesa atingiu o limite de pessoas');
-    }
+    // 1. Validate operating hours
+    this.validateOperatingHours(settings);
+
+    // 2. Validate session limit based on table capacity
+    this.validateSessionLimit(table._count.sessions, table.capacity);
+
+    // 3. Validate geolocation (client must be near restaurant)
+    this.validateGeolocation(
+      settings,
+      table.restaurant.latitude,
+      table.restaurant.longitude,
+      dto.latitude,
+      dto.longitude,
+    );
 
     // Check for existing session with same fingerprint
     const existingSession = await this.prisma.tableSession.findFirst({

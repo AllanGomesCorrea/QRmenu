@@ -17,49 +17,46 @@ export class ReportsService {
 
   /**
    * Get general statistics for the restaurant
+   * 
+   * IMPORTANTE: Receita é calculada apenas com pedidos PAID (pagos),
+   * usando o campo paidAt para filtrar por período de pagamento.
+   * Isso garante consistência com o Dashboard.
    */
   async getStats(restaurantId: string, period: 'today' | '7days' | '30days' | 'month' | 'lastMonth') {
     const { startDate, endDate, previousStartDate, previousEndDate } = this.getDateRange(period);
 
-    // Current period orders
-    const currentOrders = await this.prisma.order.findMany({
+    // Current period - pedidos PAGOS no período (baseado em paidAt)
+    const currentPaidOrders = await this.prisma.order.findMany({
       where: {
         restaurantId,
-        createdAt: {
+        status: OrderStatus.PAID,
+        paidAt: {
           gte: startDate,
           lte: endDate,
         },
-        status: {
-          not: OrderStatus.CANCELLED,
-        },
-      },
-      include: {
-        items: true,
       },
     });
 
-    // Previous period orders for comparison
-    const previousOrders = await this.prisma.order.findMany({
+    // Previous period - pedidos PAGOS no período anterior
+    const previousPaidOrders = await this.prisma.order.findMany({
       where: {
         restaurantId,
-        createdAt: {
+        status: OrderStatus.PAID,
+        paidAt: {
           gte: previousStartDate,
           lte: previousEndDate,
         },
-        status: {
-          not: OrderStatus.CANCELLED,
-        },
       },
     });
 
-    // Calculate current period stats
-    const totalRevenue = currentOrders.reduce((sum, order) => sum + this.toNumber(order.total), 0);
-    const totalOrders = currentOrders.length;
+    // Calculate current period stats (apenas pedidos pagos)
+    const totalRevenue = currentPaidOrders.reduce((sum, order) => sum + this.toNumber(order.total), 0);
+    const totalOrders = currentPaidOrders.length;
     const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
 
     // Calculate previous period stats for comparison
-    const prevRevenue = previousOrders.reduce((sum, order) => sum + this.toNumber(order.total), 0);
-    const prevOrders = previousOrders.length;
+    const prevRevenue = previousPaidOrders.reduce((sum, order) => sum + this.toNumber(order.total), 0);
+    const prevOrders = previousPaidOrders.length;
     const prevAvgOrderValue = prevOrders > 0 ? prevRevenue / prevOrders : 0;
 
     // Calculate percentage changes
@@ -67,8 +64,10 @@ export class ReportsService {
     const ordersChange = prevOrders > 0 ? ((totalOrders - prevOrders) / prevOrders) * 100 : 0;
     const avgOrderChange = prevAvgOrderValue > 0 ? ((avgOrderValue - prevAvgOrderValue) / prevAvgOrderValue) * 100 : 0;
 
-    // Calculate average prep time (mock for now, would need timestamps in real scenario)
-    const avgPrepTime = 18; // minutes
+    // Calculate average prep time (from createdAt to readyAt)
+    const avgPrepTime = await this.calculateAvgPrepTime(restaurantId, startDate, endDate);
+    const prevAvgPrepTime = await this.calculateAvgPrepTime(restaurantId, previousStartDate, previousEndDate);
+    const prepTimeChange = prevAvgPrepTime > 0 ? ((avgPrepTime - prevAvgPrepTime) / prevAvgPrepTime) * 100 : 0;
 
     return {
       totalRevenue,
@@ -78,41 +77,89 @@ export class ReportsService {
       revenueChange: parseFloat(revenueChange.toFixed(1)),
       ordersChange: parseFloat(ordersChange.toFixed(1)),
       avgOrderChange: parseFloat(avgOrderChange.toFixed(1)),
+      prepTimeChange: parseFloat(prepTimeChange.toFixed(1)),
     };
   }
 
   /**
-   * Get daily sales data for charts
+   * Calculate average preparation time in minutes
+   * Time from order creation (createdAt) to ready (readyAt)
    */
-  async getDailySales(restaurantId: string, period: 'today' | '7days' | '30days' | 'month' | 'lastMonth') {
-    const { startDate, endDate } = this.getDateRange(period);
-
-    const orders = await this.prisma.order.findMany({
+  private async calculateAvgPrepTime(
+    restaurantId: string,
+    startDate: Date,
+    endDate: Date,
+  ): Promise<number> {
+    const ordersWithReadyTime = await this.prisma.order.findMany({
       where: {
         restaurantId,
         createdAt: {
           gte: startDate,
           lte: endDate,
         },
+        readyAt: {
+          not: null, // Only orders that have been marked as ready
+        },
         status: {
           not: OrderStatus.CANCELLED,
         },
       },
       select: {
-        total: true,
         createdAt: true,
-      },
-      orderBy: {
-        createdAt: 'asc',
+        readyAt: true,
       },
     });
 
-    // Group by day
+    if (ordersWithReadyTime.length === 0) {
+      return 0; // No data to calculate
+    }
+
+    // Calculate total prep time in minutes
+    const totalPrepTimeMinutes = ordersWithReadyTime.reduce((sum, order) => {
+      if (!order.readyAt) return sum;
+      const diffMs = order.readyAt.getTime() - order.createdAt.getTime();
+      const diffMinutes = diffMs / (1000 * 60); // Convert ms to minutes
+      return sum + diffMinutes;
+    }, 0);
+
+    const avgMinutes = totalPrepTimeMinutes / ordersWithReadyTime.length;
+    return Math.round(avgMinutes); // Return rounded integer
+  }
+
+  /**
+   * Get daily sales data for charts
+   * 
+   * Usa paidAt para agrupar por dia de pagamento (consistente com Dashboard)
+   */
+  async getDailySales(restaurantId: string, period: 'today' | '7days' | '30days' | 'month' | 'lastMonth') {
+    const { startDate, endDate } = this.getDateRange(period);
+
+    // Busca pedidos PAGOS no período, baseado na data de pagamento
+    const orders = await this.prisma.order.findMany({
+      where: {
+        restaurantId,
+        status: OrderStatus.PAID,
+        paidAt: {
+          gte: startDate,
+          lte: endDate,
+        },
+      },
+      select: {
+        total: true,
+        paidAt: true,
+      },
+      orderBy: {
+        paidAt: 'asc',
+      },
+    });
+
+    // Group by day of payment
     const dailyData: Record<string, { orders: number; revenue: number }> = {};
     const dayLabels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
     orders.forEach((order) => {
-      const date = order.createdAt.toISOString().split('T')[0];
+      if (!order.paidAt) return;
+      const date = order.paidAt.toISOString().split('T')[0];
       if (!dailyData[date]) {
         dailyData[date] = { orders: 0, revenue: 0 };
       }
@@ -136,20 +183,20 @@ export class ReportsService {
 
   /**
    * Get top selling items
+   * 
+   * Considera apenas itens de pedidos PAGOS no período
    */
-  async getTopItems(restaurantId: string, period: 'today' | '7days' | '30days' | 'month' | 'lastMonth', limit: number = 5) {
+  async getTopItems(restaurantId: string, period: 'today' | '7days' | '30days' | 'month' | 'lastMonth', limit: number = 100) {
     const { startDate, endDate } = this.getDateRange(period);
 
     const orderItems = await this.prisma.orderItem.findMany({
       where: {
         order: {
           restaurantId,
-          createdAt: {
+          status: OrderStatus.PAID,
+          paidAt: {
             gte: startDate,
             lte: endDate,
-          },
-          status: {
-            not: OrderStatus.CANCELLED,
           },
         },
       },

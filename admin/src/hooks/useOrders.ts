@@ -1,8 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '@/services/api';
 
-export type OrderStatus = 'PENDING' | 'CONFIRMED' | 'PREPARING' | 'READY' | 'DELIVERED' | 'CANCELLED';
-export type OrderItemStatus = 'PENDING' | 'PREPARING' | 'READY' | 'DELIVERED' | 'CANCELLED';
+export type OrderStatus = 'PENDING' | 'CONFIRMED' | 'PREPARING' | 'READY' | 'PAID' | 'CANCELLED';
+export type OrderItemStatus = 'PENDING' | 'PREPARING' | 'READY' | 'CANCELLED';
 
 export interface OrderItemExtra {
   name: string;
@@ -40,6 +40,7 @@ export interface Order {
   };
   createdAt: string;
   updatedAt: string;
+  paidAt?: string;  // Data de pagamento
 }
 
 export interface OrderStats {
@@ -82,6 +83,30 @@ export function useOrders(params?: {
 export function useOrderStats(startDate?: string, endDate?: string) {
   return useQuery<OrderStats>({
     queryKey: ['order-stats', startDate, endDate],
+    queryFn: async () => {
+      const response = await api.get('/orders/stats', {
+        params: { startDate, endDate },
+      });
+      return response.data;
+    },
+  });
+}
+
+/**
+ * Hook para estatísticas de hoje (para Dashboard)
+ * Filtra pedidos pagos hoje (baseado em paidAt)
+ */
+export function useTodayStats() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const startDate = today.toISOString();
+  
+  const endOfDay = new Date();
+  endOfDay.setHours(23, 59, 59, 999);
+  const endDate = endOfDay.toISOString();
+
+  return useQuery<OrderStats>({
+    queryKey: ['order-stats-today'],
     queryFn: async () => {
       const response = await api.get('/orders/stats', {
         params: { startDate, endDate },

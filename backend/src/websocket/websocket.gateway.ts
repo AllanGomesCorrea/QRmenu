@@ -84,6 +84,7 @@ export class WebsocketGateway
         if (sessionData) {
           client.sessionId = sessionData.sessionId;
           client.restaurantId = sessionData.restaurantId;
+          (client as any).tableId = sessionData.tableId; // Store tableId for later use
           client.isCustomer = true;
 
           // Join customer-specific rooms
@@ -91,7 +92,7 @@ export class WebsocketGateway
           client.join(`session:${sessionData.sessionId}`);
           client.join(`table:${sessionData.tableId}`);
           
-          this.logger.log(`Customer session ${sessionData.sessionId} connected`);
+          this.logger.log(`Customer session ${sessionData.sessionId} connected to table ${sessionData.tableId}`);
         } else {
           client.disconnect();
           return;
@@ -192,11 +193,21 @@ export class WebsocketGateway
   @SubscribeMessage('table:call-waiter')
   async handleCallWaiter(
     @ConnectedSocket() client: AuthenticatedSocket,
-    @MessageBody() data: { tableId?: string; reason?: string },
+    @MessageBody() data: { tableId?: string; reason?: string } | undefined,
   ) {
-    if (!client.restaurantId) return;
+    this.logger.log(`📢 Call waiter received from session ${client.sessionId}, restaurant ${client.restaurantId}`);
+    
+    if (!client.restaurantId) {
+      this.logger.warn('Call waiter failed: no restaurantId');
+      return { success: false, error: 'No restaurant ID' };
+    }
 
-    const tableId = data.tableId || (client as any).tableId;
+    const tableId = data?.tableId || (client as any).tableId;
+    
+    if (!tableId) {
+      this.logger.warn('Call waiter failed: no tableId');
+      return { success: false, error: 'No table ID' };
+    }
 
     // Get table info
     const table = await this.prisma.table.findUnique({
@@ -204,15 +215,18 @@ export class WebsocketGateway
       select: { number: true, name: true },
     });
 
-    // Emit to staff
-    this.server.to(`staff:${client.restaurantId}`).emit('table:waiter-called', {
+    const payload = {
       tableId,
       tableNumber: table?.number,
       tableName: table?.name,
-      reason: data.reason,
+      reason: data?.reason,
       sessionId: client.sessionId,
       timestamp: new Date().toISOString(),
-    });
+    };
+
+    // Emit to staff
+    this.logger.log(`🔔 Emitting table:waiter-called to staff:${client.restaurantId}`, payload);
+    this.server.to(`staff:${client.restaurantId}`).emit('table:waiter-called', payload);
 
     return { success: true };
   }
@@ -220,11 +234,21 @@ export class WebsocketGateway
   @SubscribeMessage('table:request-bill')
   async handleRequestBill(
     @ConnectedSocket() client: AuthenticatedSocket,
-    @MessageBody() data: { tableId?: string },
+    @MessageBody() data: { tableId?: string } | undefined,
   ) {
-    if (!client.restaurantId) return;
+    this.logger.log(`📢 Request bill received from session ${client.sessionId}, restaurant ${client.restaurantId}`);
+    
+    if (!client.restaurantId) {
+      this.logger.warn('Request bill failed: no restaurantId');
+      return { success: false, error: 'No restaurant ID' };
+    }
 
-    const tableId = data.tableId || (client as any).tableId;
+    const tableId = data?.tableId || (client as any).tableId;
+    
+    if (!tableId) {
+      this.logger.warn('Request bill failed: no tableId');
+      return { success: false, error: 'No table ID' };
+    }
 
     // Get table info
     const table = await this.prisma.table.findUnique({
@@ -232,14 +256,17 @@ export class WebsocketGateway
       select: { number: true, name: true },
     });
 
-    // Emit to staff
-    this.server.to(`staff:${client.restaurantId}`).emit('table:bill-requested', {
+    const payload = {
       tableId,
       tableNumber: table?.number,
       tableName: table?.name,
       sessionId: client.sessionId,
       timestamp: new Date().toISOString(),
-    });
+    };
+
+    // Emit to staff
+    this.logger.log(`💳 Emitting table:bill-requested to staff:${client.restaurantId}`, payload);
+    this.server.to(`staff:${client.restaurantId}`).emit('table:bill-requested', payload);
 
     return { success: true };
   }

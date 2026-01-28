@@ -2,16 +2,23 @@ import { useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/authStore';
+import { useNotificationStore } from '@/stores/notificationStore';
 
 const SOCKET_URL = import.meta.env.VITE_WS_URL || 'http://localhost:3000/ws';
 
 export function useSocket() {
   const socketRef = useRef<Socket | null>(null);
   const queryClient = useQueryClient();
-  const token = useAuthStore((state) => state.token);
+  const token = useAuthStore((state) => state.accessToken);
+  const addNotification = useNotificationStore((state) => state.addNotification);
 
   useEffect(() => {
     if (!token) return;
+
+    // Request browser notification permission
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
 
     // Initialize socket connection
     socketRef.current = io(SOCKET_URL, {
@@ -43,8 +50,20 @@ export function useSocket() {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
       queryClient.invalidateQueries({ queryKey: ['order-stats'] });
       
+      // Add to notification store
+      addNotification({
+        type: 'order',
+        title: `Novo Pedido #${data.orderNumber || ''}`,
+        message: `Mesa ${data.tableNumber || 'N/A'} - ${data.itemCount || 0} itens`,
+        tableNumber: data.tableNumber,
+        orderId: data.orderId,
+      });
+      
       // Play notification sound
       playNotificationSound();
+      
+      // Browser notification
+      showBrowserNotification('Novo Pedido', `Mesa ${data.tableNumber || 'N/A'}`);
     });
 
     socket.on('order:updated', (data) => {
@@ -66,32 +85,50 @@ export function useSocket() {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
     });
 
-    // Table events
+    // Table events - Waiter called
     socket.on('table:waiter-called', (data) => {
       console.log('🔔 Waiter called:', data);
       queryClient.invalidateQueries({ queryKey: ['tables'] });
       
-      // Show notification
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification(`Mesa ${data.tableNumber}`, {
-          body: data.reason || 'Cliente chamando garçom',
-          icon: '/favicon.ico',
-        });
-      }
+      // Add to notification store
+      addNotification({
+        type: 'waiter',
+        title: `🔔 Garçom Chamado`,
+        message: `Mesa ${data.tableNumber}${data.tableName ? ` (${data.tableName})` : ''} está chamando`,
+        tableNumber: data.tableNumber,
+        tableName: data.tableName,
+        tableId: data.tableId,
+      });
+      
+      // Browser notification
+      showBrowserNotification(
+        `Mesa ${data.tableNumber} - Garçom`,
+        data.reason || 'Cliente chamando garçom'
+      );
       
       playNotificationSound();
     });
 
+    // Table events - Bill requested
     socket.on('table:bill-requested', (data) => {
       console.log('💳 Bill requested:', data);
       queryClient.invalidateQueries({ queryKey: ['tables'] });
       
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification(`Mesa ${data.tableNumber}`, {
-          body: 'Cliente solicitou a conta',
-          icon: '/favicon.ico',
-        });
-      }
+      // Add to notification store
+      addNotification({
+        type: 'bill',
+        title: `💳 Conta Solicitada`,
+        message: `Mesa ${data.tableNumber}${data.tableName ? ` (${data.tableName})` : ''} quer fechar a conta`,
+        tableNumber: data.tableNumber,
+        tableName: data.tableName,
+        tableId: data.tableId,
+      });
+      
+      // Browser notification
+      showBrowserNotification(
+        `Mesa ${data.tableNumber} - Conta`,
+        'Cliente solicitou a conta'
+      );
       
       playNotificationSound();
     });
@@ -100,7 +137,7 @@ export function useSocket() {
     return () => {
       socket.disconnect();
     };
-  }, [token, queryClient]);
+  }, [token, queryClient, addNotification]);
 
   const joinKitchen = useCallback(() => {
     socketRef.current?.emit('staff:join-kitchen');
@@ -138,3 +175,12 @@ function playNotificationSound() {
   }
 }
 
+function showBrowserNotification(title: string, body: string) {
+  if ('Notification' in window && Notification.permission === 'granted') {
+    new Notification(title, {
+      body,
+      icon: '/favicon.ico',
+      tag: `qrmenu-${Date.now()}`,
+    });
+  }
+}

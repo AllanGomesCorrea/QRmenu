@@ -8,6 +8,7 @@ interface TableStatus {
     number: number;
     name?: string;
     status: string;
+    capacity: number;
     activeSessions: number;
   };
   restaurant: {
@@ -16,7 +17,17 @@ interface TableStatus {
     slug: string;
     logoUrl?: string;
     isActive: boolean;
+    latitude?: number;
+    longitude?: number;
   };
+  operatingStatus: {
+    isOpen: boolean;
+    message?: string;
+    opensAt?: string;
+    closesAt?: string;
+  };
+  geolocationRequired: boolean;
+  geolocationRadius: number;
   canJoin: boolean;
 }
 
@@ -72,6 +83,8 @@ export function useCreateSession() {
       qrCode: string;
       deviceFingerprint: string;
       userAgent?: string;
+      latitude?: number;
+      longitude?: number;
     }) => {
       const response = await api.post('/sessions/create', data);
       return response.data;

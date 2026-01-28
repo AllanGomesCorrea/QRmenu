@@ -2,9 +2,82 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================
+   SISTEMA DE CORES - QRMenu Admin
+   ============================================
+   Para trocar a paleta de cores, basta alterar
+   os valores das variáveis abaixo.
+   ============================================ */
+
+:root {
+  /* ========== COR PRIMÁRIA (Âmbar) ========== */
+  /* Altere aqui para mudar a cor principal do app */
+  --color-primary-50: 255 251 235;   /* #fffbeb */
+  --color-primary-100: 254 243 199;  /* #fef3c7 */
+  --color-primary-200: 253 230 138;  /* #fde68a */
+  --color-primary-300: 252 211 77;   /* #fcd34d */
+  --color-primary-400: 251 191 36;   /* #fbbf24 */
+  --color-primary-500: 245 158 11;   /* #f59e0b */
+  --color-primary-600: 217 119 6;    /* #d97706 */
+  --color-primary-700: 180 83 9;     /* #b45309 */
+  --color-primary-800: 146 64 14;    /* #92400e */
+  --color-primary-900: 120 53 15;    /* #78350f */
+
+  /* ========== CORES SEMÂNTICAS ========== */
+  /* Usadas em gráficos e indicadores */
+  --color-success: 34 197 94;        /* #22c55e - Verde */
+  --color-success-light: 220 252 231; /* #dcfce7 */
+  --color-info: 59 130 246;          /* #3b82f6 - Azul */
+  --color-info-light: 219 234 254;   /* #dbeafe */
+  --color-warning: 245 158 11;       /* #f59e0b - Âmbar */
+  --color-warning-light: 254 243 199; /* #fef3c7 */
+  --color-danger: 239 68 68;         /* #ef4444 - Vermelho */
+  --color-danger-light: 254 226 226; /* #fee2e2 */
+
+  /* ========== CORES DE GRÁFICOS ========== */
+  /* Paleta para visualização de dados */
+  --chart-1: 34 197 94;              /* Verde - Receita/Positivo */
+  --chart-2: 59 130 246;             /* Azul - Pedidos/Neutro */
+  --chart-3: 168 85 247;             /* Roxo - Alternativo */
+  --chart-4: 245 158 11;             /* Âmbar - Destaque */
+  --chart-5: 107 114 128;            /* Cinza - Secundário */
+
+  /* ========== CORES DE CARDS DE STATS ========== */
+  /* Para os cards de estatísticas do dashboard/relatórios */
+  --stat-revenue-bg: var(--color-success);
+  --stat-revenue-light: var(--color-success-light);
+  --stat-orders-bg: var(--color-info);
+  --stat-orders-light: var(--color-info-light);
+  --stat-ticket-bg: 168 85 247;      /* Roxo */
+  --stat-ticket-light: 243 232 255;  /* Roxo claro */
+  --stat-time-bg: var(--color-primary-500);
+  --stat-time-light: var(--color-primary-100);
+
+  /* ========== NEUTROS ========== */
+  --color-background: 249 250 251;   /* #f9fafb - Fundo da página */
+  --color-surface: 255 255 255;      /* #ffffff - Cards/Superfícies */
+  --color-border: 229 231 235;       /* #e5e7eb - Bordas */
+  --color-border-light: 243 244 246; /* #f3f4f6 - Bordas sutis */
+  
+  /* ========== TEXTO ========== */
+  --color-text-primary: 17 24 39;    /* #111827 */
+  --color-text-secondary: 107 114 128; /* #6b7280 */
+  --color-text-muted: 156 163 175;   /* #9ca3af */
+}
+
+/* Tema escuro (opcional - para futuro) */
+/* .dark {
+  --color-background: 17 24 39;
+  --color-surface: 31 41 55;
+  --color-border: 55 65 81;
+  --color-text-primary: 249 250 251;
+  --color-text-secondary: 156 163 175;
+} */
+
 @layer base {
   body {
-    @apply font-body text-gray-900 antialiased bg-gray-50;
+    @apply font-body text-gray-900 antialiased;
+    background-color: rgb(var(--color-background));
   }
   
   h1, h2, h3, h4, h5, h6 {
@@ -48,5 +121,89 @@
   .sidebar-link.active {
     @apply bg-primary-50 text-primary-600;
   }
-}
 
+  /* ========== STAT CARDS ========== */
+  .stat-card {
+    @apply rounded-2xl p-5 shadow-sm border transition-all hover:shadow-md;
+  }
+  
+  .stat-card-revenue {
+    background-color: rgb(var(--stat-revenue-light));
+    border-color: rgb(var(--stat-revenue-bg) / 0.2);
+  }
+  
+  .stat-card-revenue .stat-icon {
+    background-color: rgb(var(--stat-revenue-bg));
+    color: white;
+  }
+  
+  .stat-card-revenue .stat-value {
+    color: rgb(var(--stat-revenue-bg));
+  }
+  
+  .stat-card-orders {
+    background-color: rgb(var(--stat-orders-light));
+    border-color: rgb(var(--stat-orders-bg) / 0.2);
+  }
+  
+  .stat-card-orders .stat-icon {
+    background-color: rgb(var(--stat-orders-bg));
+    color: white;
+  }
+  
+  .stat-card-orders .stat-value {
+    color: rgb(var(--stat-orders-bg));
+  }
+  
+  .stat-card-ticket {
+    background-color: rgb(var(--stat-ticket-light));
+    border-color: rgb(var(--stat-ticket-bg) / 0.2);
+  }
+  
+  .stat-card-ticket .stat-icon {
+    background-color: rgb(var(--stat-ticket-bg));
+    color: white;
+  }
+  
+  .stat-card-ticket .stat-value {
+    color: rgb(var(--stat-ticket-bg));
+  }
+  
+  .stat-card-time {
+    background-color: rgb(var(--stat-time-light));
+    border-color: rgb(var(--stat-time-bg) / 0.2);
+  }
+  
+  .stat-card-time .stat-icon {
+    background-color: rgb(var(--stat-time-bg));
+    color: white;
+  }
+  
+  .stat-card-time .stat-value {
+    color: rgb(var(--stat-time-bg));
+  }
+
+  .stat-icon {
+    @apply w-10 h-10 rounded-xl flex items-center justify-center;
+  }
+  
+  .stat-label {
+    @apply text-sm text-gray-600;
+  }
+  
+  .stat-value {
+    @apply text-2xl font-bold;
+  }
+  
+  .stat-change {
+    @apply text-xs px-2 py-0.5 rounded-full flex items-center gap-1;
+  }
+  
+  .stat-change-positive {
+    @apply bg-green-100 text-green-700;
+  }
+  
+  .stat-change-negative {
+    @apply bg-red-100 text-red-700;
+  }
+}

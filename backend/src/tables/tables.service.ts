@@ -3,10 +3,13 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
-import { TableStatus } from '@prisma/client';
+import { TableStatus, OrderStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { QRCodeService } from './qrcode.service';
+import { WebsocketGateway } from '../websocket/websocket.gateway';
 import { CreateTableDto, UpdateTableDto } from './dto';
 
 @Injectable()
@@ -14,6 +17,8 @@ export class TablesService {
   constructor(
     private prisma: PrismaService,
     private qrCodeService: QRCodeService,
+    @Inject(forwardRef(() => WebsocketGateway))
+    private websocketGateway: WebsocketGateway,
   ) {}
 
   async findAll(restaurantId: string) {
@@ -244,6 +249,8 @@ export class TablesService {
 
   /**
    * Release table after payment - sets status to ACTIVE (available)
+   * Only allows release if all active orders are READY or CANCELLED
+   * Marks all READY orders as PAID
    */
   async releaseTable(id: string, restaurantId: string) {
     const table = await this.prisma.table.findFirst({
@@ -257,11 +264,65 @@ export class TablesService {
       throw new NotFoundException('Mesa não encontrada');
     }
 
+    // Check if there are any orders that are not READY, PAID, or CANCELLED
+    const pendingOrders = await this.prisma.order.findMany({
+      where: {
+        tableId: id,
+        restaurantId,
+        status: {
+          in: [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PREPARING],
+        },
+      },
+      select: { orderNumber: true, status: true },
+    });
+
+    if (pendingOrders.length > 0) {
+      const orderNumbers = pendingOrders.map(o => `#${String(o.orderNumber).padStart(4, '0')}`).join(', ');
+      throw new BadRequestException(
+        `Não é possível fechar a conta. Os seguintes pedidos ainda não foram entregues: ${orderNumbers}. ` +
+        `Aguarde todos os pedidos ficarem prontos antes de fechar a conta.`
+      );
+    }
+
+    // Mark all READY orders as PAID
+    await this.prisma.order.updateMany({
+      where: {
+        tableId: id,
+        restaurantId,
+        status: OrderStatus.READY,
+      },
+      data: { 
+        status: OrderStatus.PAID,
+        paidAt: new Date(),
+      },
+    });
+
+    // Get active session IDs before deactivating (to notify via WebSocket)
+    const activeSessions = await this.prisma.tableSession.findMany({
+      where: { tableId: id, isActive: true },
+      select: { id: true },
+    });
+
     // Deactivate all active sessions
     await this.prisma.tableSession.updateMany({
       where: { tableId: id, isActive: true },
       data: { isActive: false },
     });
+
+    // Notify clients that their session was closed
+    for (const session of activeSessions) {
+      this.websocketGateway.server
+        .to(`session:${session.id}`)
+        .emit('session:closed', {
+          sessionId: session.id,
+          tableId: id,
+          tableNumber: table.number,
+          tableName: table.name,
+          reason: 'payment_completed',
+          message: 'Conta paga! Obrigado pela visita.',
+          timestamp: new Date().toISOString(),
+        });
+    }
 
     // Set table status to ACTIVE (available for new customers)
     return this.prisma.table.update({

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
@@ -9,6 +9,8 @@ import {
   User,
   ArrowRight,
   CheckCircle,
+  MapPin,
+  Clock,
 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -22,6 +24,11 @@ import {
   useCreateSession,
   useVerifyCode,
 } from '@/hooks/useSession';
+
+interface UserLocation {
+  latitude: number;
+  longitude: number;
+}
 
 const registrationSchema = z.object({
   customerName: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres'),
@@ -45,9 +52,54 @@ export default function TablePage() {
   const [fingerprint, setFingerprint] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
   const [registrationData, setRegistrationData] = useState<RegistrationForm | null>(null);
+  const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [isRequestingLocation, setIsRequestingLocation] = useState(false);
   
   const setSessionFingerprint = useSessionStore((state) => state.setFingerprint);
   const existingSession = useSessionStore((state) => state.session);
+
+  // Request user location
+  const requestLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      setLocationError('Geolocalização não suportada pelo navegador');
+      return;
+    }
+
+    setIsRequestingLocation(true);
+    setLocationError(null);
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setUserLocation({
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        });
+        setIsRequestingLocation(false);
+      },
+      (error) => {
+        setIsRequestingLocation(false);
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            setLocationError('Permissão de localização negada. Por favor, permita o acesso à sua localização.');
+            break;
+          case error.POSITION_UNAVAILABLE:
+            setLocationError('Localização indisponível.');
+            break;
+          case error.TIMEOUT:
+            setLocationError('Tempo esgotado ao obter localização.');
+            break;
+          default:
+            setLocationError('Erro ao obter localização.');
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000,
+      }
+    );
+  }, []);
 
   // Queries
   const { data: tableStatus, isLoading: loadingStatus, error: statusError } = useTableStatus(qrCode!);
@@ -81,6 +133,13 @@ export default function TablePage() {
     loadFingerprint();
   }, [setSessionFingerprint]);
 
+  // Request location when geolocation is required
+  useEffect(() => {
+    if (tableStatus?.geolocationRequired && !userLocation && !locationError && !isRequestingLocation) {
+      requestLocation();
+    }
+  }, [tableStatus?.geolocationRequired, userLocation, locationError, isRequestingLocation, requestLocation]);
+
   // Check table status and existing session
   useEffect(() => {
     if (loadingStatus || !fingerprint) return;
@@ -100,15 +159,15 @@ export default function TablePage() {
 
       // Check for existing verified session
       if (existingSession?.isVerified && existingSession?.restaurantSlug === slug) {
-        // Already has a valid session, redirect to menu
-        navigate(`/r/${slug}`);
+        // Already has a valid session, redirect to order page
+        navigate(`/r/${slug}/pedido`);
         return;
       }
 
       // Check for existing session on this device
       if (existingCheck?.hasSession && existingCheck.session?.isVerified) {
         // Session exists and is verified
-        navigate(`/r/${slug}`);
+        navigate(`/r/${slug}/pedido`);
         return;
       }
 
@@ -125,13 +184,15 @@ export default function TablePage() {
       setRegistrationData(data);
       const deviceInfo = getDeviceInfo();
 
-      // Create session
+      // Create session with location if available
       await createSession.mutateAsync({
         customerName: data.customerName,
         customerPhone: data.customerPhone,
         qrCode,
         deviceFingerprint: fingerprint,
         userAgent: deviceInfo.userAgent,
+        latitude: userLocation?.latitude,
+        longitude: userLocation?.longitude,
       });
 
       // Request verification code
@@ -160,9 +221,9 @@ export default function TablePage() {
 
       setStep('success');
       
-      // Redirect to menu after a brief delay
+      // Redirect to order page after a brief delay
       setTimeout(() => {
-        navigate(`/r/${slug}`);
+        navigate(`/r/${slug}/pedido`);
       }, 2000);
     } catch (error: any) {
       verificationForm.setError('code', {
@@ -272,9 +333,64 @@ export default function TablePage() {
         {/* Registration form */}
         {step === 'register' && (
           <div className="bg-white rounded-2xl shadow-xl p-6">
-            <h2 className="font-heading text-lg font-bold text-gray-900 mb-6">
+            <h2 className="font-heading text-lg font-bold text-gray-900 mb-4">
               Identifique-se para continuar
             </h2>
+
+            {/* Operating hours info */}
+            {tableStatus?.operatingStatus && (
+              <div className={`flex items-center gap-2 p-3 rounded-lg mb-4 ${
+                tableStatus.operatingStatus.isOpen 
+                  ? 'bg-green-50 text-green-700' 
+                  : 'bg-amber-50 text-amber-700'
+              }`}>
+                <Clock className="w-4 h-4" />
+                <span className="text-sm">
+                  {tableStatus.operatingStatus.isOpen 
+                    ? `Aberto até ${tableStatus.operatingStatus.closesAt}` 
+                    : tableStatus.operatingStatus.message}
+                </span>
+              </div>
+            )}
+
+            {/* Geolocation status */}
+            {tableStatus?.geolocationRequired && (
+              <div className={`flex items-center gap-2 p-3 rounded-lg mb-4 ${
+                userLocation 
+                  ? 'bg-green-50 text-green-700'
+                  : locationError
+                    ? 'bg-red-50 text-red-700'
+                    : 'bg-blue-50 text-blue-700'
+              }`}>
+                <MapPin className="w-4 h-4" />
+                <span className="text-sm flex-1">
+                  {isRequestingLocation 
+                    ? 'Obtendo sua localização...'
+                    : userLocation 
+                      ? 'Localização confirmada ✓'
+                      : locationError || 'Permitir acesso à localização'}
+                </span>
+                {!userLocation && !isRequestingLocation && (
+                  <button
+                    type="button"
+                    onClick={requestLocation}
+                    className="text-xs bg-white px-2 py-1 rounded border border-current"
+                  >
+                    Permitir
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Capacity info */}
+            {tableStatus?.table && (
+              <div className="flex items-center gap-2 p-3 rounded-lg mb-4 bg-gray-50 text-gray-600">
+                <User className="w-4 h-4" />
+                <span className="text-sm">
+                  Mesa para {tableStatus.table.capacity} pessoas • {tableStatus.table.activeSessions} já registrado(s)
+                </span>
+              </div>
+            )}
 
             <form
               onSubmit={registrationForm.handleSubmit(handleRegistration)}

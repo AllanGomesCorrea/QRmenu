@@ -1,6 +1,7 @@
-import { Bell, LogOut, User } from 'lucide-react';
+import { LogOut, User } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/authStore';
+import NotificationsDropdown from './NotificationsDropdown';
 
 export default function Header() {
   const navigate = useNavigate();
@@ -18,11 +19,8 @@ export default function Header() {
       </div>
 
       <div className="flex items-center gap-4">
-        {/* Notifications */}
-        <button className="p-2 hover:bg-gray-100 rounded-lg relative">
-          <Bell className="w-5 h-5 text-gray-600" />
-          <span className="absolute top-1 right-1 w-2 h-2 bg-error-500 rounded-full" />
-        </button>
+        {/* Notifications Dropdown */}
+        <NotificationsDropdown />
 
         {/* User menu */}
         <div className="flex items-center gap-3 pl-4 border-l border-gray-100">

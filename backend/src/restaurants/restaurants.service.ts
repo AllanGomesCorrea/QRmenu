@@ -230,7 +230,7 @@ export class RestaurantsService {
       this.prisma.order.aggregate({
         where: {
           restaurantId,
-          status: { in: ['DELIVERED', 'READY'] },
+          status: { in: ['PAID'] },
         },
         _sum: { total: true },
       }),

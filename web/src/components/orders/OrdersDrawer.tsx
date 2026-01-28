@@ -37,13 +37,13 @@ const statusConfig: Record<OrderStatus, { icon: any; label: string; color: strin
   },
   READY: { 
     icon: Truck, 
-    label: 'Pronto para entrega', 
+    label: 'Pronto', 
     color: 'text-emerald-600',
     bgColor: 'bg-emerald-50',
   },
-  DELIVERED: { 
+  PAID: { 
     icon: CheckCircle, 
-    label: 'Entregue', 
+    label: 'Pago', 
     color: 'text-gray-600',
     bgColor: 'bg-gray-50',
   },
@@ -59,10 +59,10 @@ export default function OrdersDrawer({ isOpen, onClose }: OrdersDrawerProps) {
   const { data: orders = [], isLoading } = useMyOrders();
 
   const activeOrders = orders.filter(
-    (o) => o.status !== 'DELIVERED' && o.status !== 'CANCELLED'
+    (o) => o.status !== 'PAID' && o.status !== 'CANCELLED'
   );
   const pastOrders = orders.filter(
-    (o) => o.status === 'DELIVERED' || o.status === 'CANCELLED'
+    (o) => o.status === 'PAID' || o.status === 'CANCELLED'
   );
 
   return (
@@ -209,7 +209,7 @@ function OrderCard({ order }: { order: Order }) {
         </div>
 
         {/* Progress indicator for active orders */}
-        {order.status !== 'DELIVERED' && order.status !== 'CANCELLED' && (
+        {order.status !== 'PAID' && order.status !== 'CANCELLED' && (
           <div className="mt-4 pt-4 border-t">
             <OrderProgress status={order.status} />
           </div>

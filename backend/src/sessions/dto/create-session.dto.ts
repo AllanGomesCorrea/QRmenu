@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString, IsOptional } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional, IsNumber, Min, Max } from 'class-validator';
 
 export class CreateSessionDto {
   @ApiProperty({ example: 'João Silva' })
@@ -26,6 +26,20 @@ export class CreateSessionDto {
   @IsString()
   @IsOptional()
   userAgent?: string;
+
+  @ApiProperty({ description: 'Latitude do cliente', required: false })
+  @IsNumber()
+  @IsOptional()
+  @Min(-90)
+  @Max(90)
+  latitude?: number;
+
+  @ApiProperty({ description: 'Longitude do cliente', required: false })
+  @IsNumber()
+  @IsOptional()
+  @Min(-180)
+  @Max(180)
+  longitude?: number;
 }
 
 export class VerifyCodeDto {

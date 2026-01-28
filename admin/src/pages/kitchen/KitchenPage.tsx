@@ -12,19 +12,28 @@ import {
   Truck,
   ChevronDown,
   ChevronUp,
+  XCircle,
 } from 'lucide-react';
 import {
   useKitchenOrders,
   useUpdateOrderStatus,
+  useCancelOrder,
   Order,
 } from '@/hooks/useOrders';
 import { useSocket } from '@/hooks/useSocket';
+import { usePermissions } from '@/hooks/usePermissions';
 
 export default function KitchenPage() {
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [cancelingOrderId, setCancelingOrderId] = useState<string | null>(null);
   const { data: orders = [], isLoading, refetch } = useKitchenOrders();
   const updateOrderStatus = useUpdateOrderStatus();
+  const cancelOrder = useCancelOrder();
   const { joinKitchen, leaveKitchen } = useSocket();
+  const { role } = usePermissions();
+  
+  // Only ADMIN and MANAGER can cancel orders
+  const canCancelOrders = role === 'ADMIN' || role === 'MANAGER' || role === 'SUPER_ADMIN';
 
   // Join kitchen room on mount
   useEffect(() => {
@@ -53,6 +62,23 @@ export default function KitchenPage() {
   // Marcar como Pronto (vai para READY)
   const handleMarkReady = async (order: Order) => {
     await updateOrderStatus.mutateAsync({ orderId: order.id, status: 'READY' });
+  };
+
+  // Cancelar pedido (só ADMIN/MANAGER)
+  const handleCancelOrder = async (order: Order) => {
+    if (!canCancelOrders) return;
+    
+    const reason = window.prompt('Motivo do cancelamento:');
+    if (!reason) return;
+    
+    setCancelingOrderId(order.id);
+    try {
+      await cancelOrder.mutateAsync({ orderId: order.id, reason });
+    } catch (error) {
+      console.error('Erro ao cancelar pedido:', error);
+    } finally {
+      setCancelingOrderId(null);
+    }
   };
 
   const getTimeSinceOrder = (createdAt: string) => {
@@ -149,6 +175,9 @@ export default function KitchenPage() {
                     actionIcon={<Play className="w-3.5 h-3.5" />}
                     isLoading={updateOrderStatus.isPending}
                     getTimeSinceOrder={getTimeSinceOrder}
+                    canCancel={canCancelOrders}
+                    onCancel={() => handleCancelOrder(order)}
+                    isCanceling={cancelingOrderId === order.id}
                   />
                 ))}
               </div>
@@ -247,6 +276,9 @@ function OrderRow({
   isLoading,
   getTimeSinceOrder,
   showAction = true,
+  canCancel = false,
+  onCancel,
+  isCanceling = false,
 }: {
   order: Order;
   type: 'pending' | 'preparing' | 'ready';
@@ -256,6 +288,9 @@ function OrderRow({
   isLoading?: boolean;
   getTimeSinceOrder: (date: string) => string;
   showAction?: boolean;
+  canCancel?: boolean;
+  onCancel?: () => void;
+  isCanceling?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   
@@ -305,6 +340,12 @@ function OrderRow({
             <span>•</span>
             <span>{itemCount} {itemCount === 1 ? 'item' : 'itens'}</span>
           </div>
+          {/* Customer name */}
+          {order.session?.customerName && (
+            <div className="text-xs text-primary-600 font-medium mt-0.5 truncate">
+              👤 {order.session.customerName}
+            </div>
+          )}
         </div>
 
         {/* Expand Button */}
@@ -314,6 +355,21 @@ function OrderRow({
         >
           {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
         </button>
+
+        {/* Cancel Button (only for ADMIN/MANAGER on pending orders) */}
+        {canCancel && onCancel && type === 'pending' && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onCancel();
+            }}
+            disabled={isCanceling}
+            className="bg-red-100 hover:bg-red-200 text-red-700 px-2 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1 disabled:opacity-50 transition-colors"
+            title="Cancelar pedido"
+          >
+            <XCircle className="w-3.5 h-3.5" />
+          </button>
+        )}
 
         {/* Action Button */}
         {showAction && onAction && (

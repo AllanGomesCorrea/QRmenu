@@ -11,6 +11,7 @@ interface ReportStats {
   revenueChange: number;
   ordersChange: number;
   avgOrderChange: number;
+  prepTimeChange: number;
 }
 
 interface DailySale {

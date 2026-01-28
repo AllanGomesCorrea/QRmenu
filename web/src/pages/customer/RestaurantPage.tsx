@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { useParams, useNavigate } from 'react-router-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
   MapPin, 
   Phone, 
@@ -11,6 +11,8 @@ import {
   ClipboardList,
   Bell,
   Receipt,
+  CheckCircle,
+  Heart,
 } from 'lucide-react';
 import { useMenu } from '@/hooks/useMenu';
 import { useCartStore } from '@/stores/cartStore';
@@ -26,6 +28,7 @@ import { MenuItem } from '@/types';
 
 export default function RestaurantPage() {
   const { slug } = useParams<{ slug: string }>();
+  const navigate = useNavigate();
   const { data, isLoading, error } = useMenu(slug!);
   
   const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
@@ -40,13 +43,69 @@ export default function RestaurantPage() {
   const isSessionValid = useSessionStore((state) => state.isSessionValid());
   
   // Socket connection for real-time updates
-  const { callWaiter, requestBill } = useSocket();
+  const { 
+    callWaiter, 
+    requestBill, 
+    waiterCooldown, 
+    billCooldown,
+    isWaiterOnCooldown,
+    isBillOnCooldown,
+    sessionClosed,
+    clearSessionClosed,
+  } = useSocket();
   
   // Get active orders count
   const { data: orders = [] } = useMyOrders();
   const activeOrdersCount = orders.filter(
-    (o) => o.status !== 'DELIVERED' && o.status !== 'CANCELLED'
+    (o) => o.status !== 'PAID' && o.status !== 'CANCELLED'
   ).length;
+  
+  // Check for pending orders (not ready yet)
+  const pendingOrders = orders.filter(
+    (o) => o.status === 'PENDING' || o.status === 'CONFIRMED' || o.status === 'PREPARING'
+  );
+  const hasPendingOrders = pendingOrders.length > 0;
+
+  // Handle call waiter with cooldown
+  const handleCallWaiter = () => {
+    if (isWaiterOnCooldown) {
+      alert(`⏳ Aguarde ${waiterCooldown} segundos para chamar o garçom novamente.`);
+      return;
+    }
+    
+    const success = callWaiter();
+    if (success) {
+      alert('🔔 Garçom chamado!\n\nAguarde um momento.');
+    }
+  };
+
+  // Handle request bill with validation and cooldown
+  const handleRequestBill = () => {
+    if (isBillOnCooldown) {
+      alert(`⏳ Aguarde ${billCooldown} segundos para solicitar a conta novamente.`);
+      return;
+    }
+    
+    if (hasPendingOrders) {
+      const pendingCount = pendingOrders.length;
+      alert(
+        `⚠️ Você tem ${pendingCount} pedido${pendingCount > 1 ? 's' : ''} ainda em preparo.\n\n` +
+        `Aguarde todos os pedidos ficarem prontos antes de solicitar a conta.\n\n` +
+        `Status dos pedidos:\n` +
+        pendingOrders.map(o => `• Pedido #${String(o.orderNumber).padStart(4, '0')} - ${
+          o.status === 'PENDING' ? 'Pendente' :
+          o.status === 'CONFIRMED' ? 'Confirmado' :
+          o.status === 'PREPARING' ? 'Preparando' : o.status
+        }`).join('\n')
+      );
+      return;
+    }
+    
+    const success = requestBill();
+    if (success) {
+      alert('✅ Conta solicitada!\n\nO garçom trará sua conta em instantes.');
+    }
+  };
 
   if (isLoading) {
     return (
@@ -237,15 +296,17 @@ export default function RestaurantPage() {
           <motion.button
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={() => {
-              callWaiter();
-              alert('Garçom chamado! Aguarde um momento.');
-            }}
-            className="w-12 h-12 bg-amber-500 text-white rounded-full shadow-lg flex items-center justify-center"
+            whileHover={{ scale: isWaiterOnCooldown ? 1 : 1.1 }}
+            whileTap={{ scale: isWaiterOnCooldown ? 1 : 0.9 }}
+            onClick={handleCallWaiter}
+            disabled={isWaiterOnCooldown}
+            className={`w-12 h-12 ${isWaiterOnCooldown ? 'bg-gray-400' : 'bg-amber-500'} text-white rounded-full shadow-lg flex items-center justify-center relative`}
           >
-            <Bell className="w-5 h-5" />
+            {isWaiterOnCooldown ? (
+              <span className="text-xs font-bold">{waiterCooldown}s</span>
+            ) : (
+              <Bell className="w-5 h-5" />
+            )}
           </motion.button>
           
           {/* Request bill */}
@@ -253,15 +314,22 @@ export default function RestaurantPage() {
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
             transition={{ delay: 0.1 }}
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            onClick={() => {
-              requestBill();
-              alert('Conta solicitada! Aguarde um momento.');
-            }}
-            className="w-12 h-12 bg-purple-500 text-white rounded-full shadow-lg flex items-center justify-center"
+            whileHover={{ scale: (hasPendingOrders || isBillOnCooldown) ? 1 : 1.1 }}
+            whileTap={{ scale: (hasPendingOrders || isBillOnCooldown) ? 1 : 0.9 }}
+            onClick={handleRequestBill}
+            disabled={isBillOnCooldown}
+            className={`w-12 h-12 ${(hasPendingOrders || isBillOnCooldown) ? 'bg-gray-400' : 'bg-purple-500'} text-white rounded-full shadow-lg flex items-center justify-center relative`}
           >
-            <Receipt className="w-5 h-5" />
+            {isBillOnCooldown ? (
+              <span className="text-xs font-bold">{billCooldown}s</span>
+            ) : (
+              <Receipt className="w-5 h-5" />
+            )}
+            {hasPendingOrders && !isBillOnCooldown && (
+              <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-500 text-white text-[10px] rounded-full flex items-center justify-center">
+                !
+              </span>
+            )}
           </motion.button>
           
           {/* View orders */}
@@ -334,6 +402,92 @@ export default function RestaurantPage() {
         isOpen={isOrdersOpen}
         onClose={() => setIsOrdersOpen(false)}
       />
+
+      {/* Thank you modal when session is closed (payment completed) */}
+      <AnimatePresence>
+        {sessionClosed && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.8, opacity: 0 }}
+              className="bg-white rounded-2xl p-8 max-w-md w-full text-center shadow-2xl"
+            >
+              {/* Success icon */}
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}
+                className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6"
+              >
+                <CheckCircle className="w-10 h-10 text-green-600" />
+              </motion.div>
+
+              {/* Title */}
+              <motion.h2
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: 0.3 }}
+                className="text-2xl font-bold text-gray-900 mb-2"
+              >
+                Conta Paga! 🎉
+              </motion.h2>
+
+              {/* Message */}
+              <motion.p
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: 0.4 }}
+                className="text-gray-600 mb-6"
+              >
+                {sessionClosed.message}
+              </motion.p>
+
+              {/* Thank you message */}
+              <motion.div
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: 0.5 }}
+                className="flex items-center justify-center gap-2 text-primary-600 mb-8"
+              >
+                <Heart className="w-5 h-5 fill-current" />
+                <span className="font-medium">Volte sempre!</span>
+              </motion.div>
+
+              {/* Table info */}
+              <motion.div
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: 0.6 }}
+                className="bg-gray-50 rounded-lg p-4 mb-6 text-sm text-gray-500"
+              >
+                Mesa {sessionClosed.tableNumber} • {sessionClosed.tableName}
+              </motion.div>
+
+              {/* Action button */}
+              <motion.button
+                initial={{ y: 20, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: 0.7 }}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => {
+                  clearSessionClosed();
+                  navigate(`/r/${slug}`);
+                }}
+                className="w-full py-3 px-6 bg-primary-500 text-white font-semibold rounded-xl hover:bg-primary-600 transition-colors"
+              >
+                Ver Cardápio
+              </motion.button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

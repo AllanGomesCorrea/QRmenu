@@ -13,7 +13,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { usePermissions } from '@/hooks/usePermissions';
-import { useOrders, Order } from '@/hooks/useOrders';
+import { useOrders, useTodayStats, Order } from '@/hooks/useOrders';
 import { useTables } from '@/hooks/useTables';
 import api from '@/services/api';
 
@@ -21,8 +21,8 @@ const orderStatusColors: Record<string, string> = {
   'PENDING': 'bg-blue-100 text-blue-700',
   'CONFIRMED': 'bg-indigo-100 text-indigo-700',
   'PREPARING': 'bg-amber-100 text-amber-700',
-  'READY': 'bg-emerald-100 text-emerald-700',
-  'DELIVERED': 'bg-gray-100 text-gray-700',
+  'READY': 'bg-green-100 text-green-700',
+  'PAID': 'bg-emerald-100 text-emerald-700',
   'CANCELLED': 'bg-red-100 text-red-700',
 };
 
@@ -31,7 +31,7 @@ const orderStatusLabels: Record<string, string> = {
   'CONFIRMED': 'Confirmado',
   'PREPARING': 'Preparando',
   'READY': 'Pronto',
-  'DELIVERED': 'Entregue',
+  'PAID': 'Pago',
   'CANCELLED': 'Cancelado',
 };
 
@@ -59,6 +59,17 @@ interface TableBill {
   itemCount: number;
   status: 'open' | 'ready' | 'paid';
   firstOrderTime: string;
+  paidAt?: string;  // Data do pagamento mais recente (para filtrar por hoje)
+}
+
+// Helper para verificar se uma data é de hoje
+function isToday(dateString?: string): boolean {
+  if (!dateString) return false;
+  const date = new Date(dateString);
+  const today = new Date();
+  return date.getDate() === today.getDate() &&
+    date.getMonth() === today.getMonth() &&
+    date.getFullYear() === today.getFullYear();
 }
 
 interface ExpandableBillRowProps {
@@ -68,9 +79,10 @@ interface ExpandableBillRowProps {
   canManage: boolean;
   onPayment: (tableId: string) => void;
   isProcessing: boolean;
+  canConfirmPayment: boolean;
 }
 
-function ExpandableBillRow({ bill, isExpanded, onToggle, canManage, onPayment, isProcessing }: ExpandableBillRowProps) {
+function ExpandableBillRow({ bill, isExpanded, onToggle, canManage, onPayment, isProcessing, canConfirmPayment }: ExpandableBillRowProps) {
   const statusColors = {
     open: 'bg-amber-100 text-amber-700 border-amber-200',
     ready: 'bg-green-100 text-green-700 border-green-200',
@@ -181,7 +193,11 @@ function ExpandableBillRow({ bill, isExpanded, onToggle, canManage, onPayment, i
 
                 {/* Orders List */}
                 <div className="space-y-4">
-                  {bill.orders.map((order, orderIndex) => (
+                  {/* Para mesas abertas/prontas, mostrar apenas pedidos não-PAID (ativos) */}
+                  {/* Para mesas pagas, mostrar todos os pedidos */}
+                  {bill.orders
+                    .filter(order => bill.status === 'paid' || order.status !== 'PAID')
+                    .map((order, orderIndex) => (
                     <motion.div
                       key={order.id}
                       initial={{ opacity: 0, x: -20 }}
@@ -260,32 +276,54 @@ function ExpandableBillRow({ bill, isExpanded, onToggle, canManage, onPayment, i
                   className="mt-4 pt-4 border-t-2 border-gray-200"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-lg font-semibold text-gray-700">Total da Mesa {bill.tableNumber}</span>
-                    <span className="text-xl font-bold text-gray-900">{formatCurrency(bill.totalAmount)}</span>
+                    <span className="text-lg font-semibold text-gray-700">
+                      {bill.totalAmount > 0 ? `Total da Mesa ${bill.tableNumber}` : `Mesa ${bill.tableNumber}`}
+                    </span>
+                    <span className={`text-xl font-bold ${bill.totalAmount > 0 ? 'text-gray-900' : 'text-gray-500'}`}>
+                      {bill.totalAmount > 0 ? formatCurrency(bill.totalAmount) : 'Sem valor a pagar'}
+                    </span>
                   </div>
 
                   {canManage && bill.status !== 'paid' && (
-                    <div className="mt-4 flex items-center gap-3">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onPayment(bill.tableId);
-                        }}
-                        disabled={isProcessing}
-                        className="flex-1 py-2.5 rounded-lg font-medium flex items-center justify-center gap-2 transition-all bg-green-500 hover:bg-green-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {isProcessing ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            Processando...
-                          </>
-                        ) : (
-                          <>
-                            <CheckCircle className="w-4 h-4" />
-                            Confirmar Pagamento
-                          </>
-                        )}
-                      </button>
+                    <div className="mt-4">
+                      {canConfirmPayment ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onPayment(bill.tableId);
+                          }}
+                          disabled={isProcessing}
+                          className={`w-full py-2.5 rounded-lg font-medium flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                            bill.totalAmount > 0 
+                              ? 'bg-green-500 hover:bg-green-600 text-white' 
+                              : 'bg-gray-500 hover:bg-gray-600 text-white'
+                          }`}
+                        >
+                          {isProcessing ? (
+                            <>
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              Processando...
+                            </>
+                          ) : bill.totalAmount > 0 ? (
+                            <>
+                              <CheckCircle className="w-4 h-4" />
+                              Confirmar Pagamento
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle className="w-4 h-4" />
+                              Liberar Mesa (sem cobrança)
+                            </>
+                          )}
+                        </button>
+                      ) : (
+                        <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-center">
+                          <p className="text-sm text-amber-700">
+                            <Clock className="w-4 h-4 inline mr-1" />
+                            Aguardando todos os pedidos ficarem prontos para confirmar pagamento
+                          </p>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -311,10 +349,10 @@ export default function CashierPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedBill, setExpandedBill] = useState<string | null>(null);
   const [processingTableId, setProcessingTableId] = useState<string | null>(null);
-  const [paidTables, setPaidTables] = useState<Set<string>>(new Set());
 
   const { data: ordersData, isLoading: loadingOrders, refetch: refetchOrders } = useOrders({ limit: 100 });
   const { data: tables, refetch: refetchTables } = useTables();
+  const { data: todayStats, refetch: refetchTodayStats } = useTodayStats();
 
   // Group orders by table to create bills
   const tableBills = useMemo<TableBill[]>(() => {
@@ -322,26 +360,17 @@ export default function CashierPage() {
 
     const billsMap = new Map<string, TableBill>();
 
+    // Primeiro, agrupar todos os pedidos por mesa
     ordersData.orders.forEach((order) => {
       if (!order.table?.id) return;
       
       const tableId = order.table.id;
       const existing = billsMap.get(tableId);
-
-      const orderTotal = typeof order.total === 'number' ? order.total : (parseFloat(String(order.total)) || 0);
       
       if (existing) {
         existing.orders.push(order);
-        existing.totalAmount += orderTotal;
-        existing.itemCount += order.items?.length || 0;
         if (new Date(order.createdAt) < new Date(existing.firstOrderTime)) {
           existing.firstOrderTime = order.createdAt;
-        }
-        // Update status based on orders (unless already marked as paid)
-        if (paidTables.has(tableId)) {
-          existing.status = 'paid';
-        } else if (order.status === 'DELIVERED') {
-          existing.status = 'ready';
         }
       } else {
         billsMap.set(tableId, {
@@ -349,22 +378,86 @@ export default function CashierPage() {
           tableNumber: order.table.number,
           tableName: order.table.name,
           orders: [order],
-          totalAmount: orderTotal,
-          itemCount: order.items?.length || 0,
-          status: paidTables.has(tableId) ? 'paid' : (order.status === 'DELIVERED' ? 'ready' : 'open'),
+          totalAmount: 0, // Será calculado depois
+          itemCount: 0,   // Será calculado depois
+          status: 'open',
           firstOrderTime: order.createdAt,
         });
       }
     });
+    
+    // Determinar status e calcular totais
+    billsMap.forEach((bill) => {
+      // Check if ALL orders are PAID or CANCELLED - mark as paid/released
+      const allOrdersPaidOrCancelled = bill.orders.every(
+        order => order.status === 'PAID' || order.status === 'CANCELLED'
+      );
+      
+      if (allOrdersPaidOrCancelled && bill.orders.length > 0) {
+        bill.status = 'paid';
+        // Para mesas pagas/liberadas, somar apenas pedidos PAID (não CANCELLED)
+        bill.orders.filter(o => o.status === 'PAID').forEach(order => {
+          const orderTotal = typeof order.total === 'number' ? order.total : (parseFloat(String(order.total)) || 0);
+          bill.totalAmount += orderTotal;
+          bill.itemCount += order.items?.length || 0;
+        });
+        // Pegar a data de pagamento mais recente entre os pedidos PAID
+        const paidDates = bill.orders
+          .filter(o => o.paidAt)
+          .map(o => new Date(o.paidAt!).getTime());
+        if (paidDates.length > 0) {
+          bill.paidAt = new Date(Math.max(...paidDates)).toISOString();
+        }
+        return;
+      }
+      
+      // Para mesas NÃO pagas, somar apenas pedidos ATIVOS a pagar (READY, PENDING, PREPARING, CONFIRMED)
+      // Pedidos PAID são de sessões anteriores e CANCELLED não devem ser cobrados
+      const activeOrders = bill.orders.filter(order => order.status !== 'PAID');
+      const chargeableOrders = activeOrders.filter(order => order.status !== 'CANCELLED');
+      
+      chargeableOrders.forEach(order => {
+        const orderTotal = typeof order.total === 'number' ? order.total : (parseFloat(String(order.total)) || 0);
+        bill.totalAmount += orderTotal;
+        bill.itemCount += order.items?.length || 0;
+      });
+      
+      // Check if all ACTIVE orders are READY or CANCELLED - mark as ready for payment/release
+      const allActiveOrdersReadyOrCancelled = activeOrders.length > 0 && activeOrders.every(
+        order => order.status === 'READY' || order.status === 'CANCELLED'
+      );
+      if (allActiveOrdersReadyOrCancelled) {
+        bill.status = 'ready';
+      }
+    });
 
-    return Array.from(billsMap.values()).sort((a, b) => 
+    // Filtrar mesas que não têm pedidos ativos (só tinham pedidos PAID antigos)
+    const filteredBills = Array.from(billsMap.values()).filter(bill => {
+      // Manter mesas pagas (todas PAID)
+      if (bill.status === 'paid') return true;
+      // Manter mesas com pedidos ativos (mesmo que total seja 0 por serem todos cancelados)
+      const activeOrders = bill.orders.filter(order => order.status !== 'PAID');
+      return activeOrders.length > 0;
+    });
+
+    return filteredBills.sort((a, b) => 
       new Date(b.firstOrderTime).getTime() - new Date(a.firstOrderTime).getTime()
     );
-  }, [ordersData, tables, paidTables]);
+  }, [ordersData, tables]);
 
   const filteredBills = useMemo(() => {
     return tableBills.filter(bill => {
-      const matchesFilter = filter === 'all' || bill.status === filter;
+      // Para filtro "paid", mostrar apenas mesas pagas HOJE
+      let matchesFilter = false;
+      if (filter === 'all') {
+        matchesFilter = true;
+      } else if (filter === 'paid') {
+        // Apenas mesas pagas hoje
+        matchesFilter = bill.status === 'paid' && isToday(bill.paidAt);
+      } else {
+        matchesFilter = bill.status === filter;
+      }
+      
       const matchesSearch = searchTerm === '' || 
         bill.tableNumber.toString().includes(searchTerm) ||
         bill.tableName?.toLowerCase().includes(searchTerm.toLowerCase());
@@ -375,23 +468,21 @@ export default function CashierPage() {
   const stats = useMemo(() => ({
     pending: tableBills.filter(b => b.status === 'open').length,
     totalPending: tableBills.filter(b => b.status === 'open').reduce((acc, b) => acc + b.totalAmount, 0),
-    paidToday: tableBills.filter(b => b.status === 'paid').reduce((acc, b) => acc + b.totalAmount, 0),
-  }), [tableBills]);
+    // Usar todayStats.revenue do backend para garantir consistência com Dashboard e Relatórios
+    paidToday: todayStats?.revenue || 0,
+  }), [tableBills, todayStats]);
 
   const handlePayment = async (tableId: string) => {
     setProcessingTableId(tableId);
     try {
-      // Call API to release table (ends session and sets status to ACTIVE)
+      // Call API to release table (marks orders as PAID, ends session, sets status to ACTIVE)
       await api.post(`/tables/${tableId}/release`);
-      
-      // Mark table as paid locally
-      setPaidTables(prev => new Set(prev).add(tableId));
       
       // Close expanded view
       setExpandedBill(null);
       
       // Refetch data
-      await Promise.all([refetchOrders(), refetchTables()]);
+      await Promise.all([refetchOrders(), refetchTables(), refetchTodayStats()]);
       
     } catch (error: any) {
       console.error('Error processing payment:', error);
@@ -545,17 +636,25 @@ export default function CashierPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredBills.map((bill) => (
-                  <ExpandableBillRow
-                    key={bill.tableId}
-                    bill={bill}
-                    isExpanded={expandedBill === bill.tableId}
-                    onToggle={() => setExpandedBill(expandedBill === bill.tableId ? null : bill.tableId)}
-                    canManage={canManage('cashier')}
-                    onPayment={handlePayment}
-                    isProcessing={processingTableId === bill.tableId}
-                  />
-                ))}
+                {filteredBills.map((bill) => {
+                  // Check if all ACTIVE orders (non-PAID) are READY or CANCELLED
+                  const activeOrders = bill.orders.filter(o => o.status !== 'PAID');
+                  const canConfirmPayment = activeOrders.length > 0 && activeOrders.every(
+                    order => order.status === 'READY' || order.status === 'CANCELLED'
+                  );
+                  return (
+                    <ExpandableBillRow
+                      key={bill.tableId}
+                      bill={bill}
+                      isExpanded={expandedBill === bill.tableId}
+                      onToggle={() => setExpandedBill(expandedBill === bill.tableId ? null : bill.tableId)}
+                      canManage={canManage('cashier')}
+                      onPayment={handlePayment}
+                      isProcessing={processingTableId === bill.tableId}
+                      canConfirmPayment={canConfirmPayment}
+                    />
+                  );
+                })}
               </tbody>
             </table>
           </div>
