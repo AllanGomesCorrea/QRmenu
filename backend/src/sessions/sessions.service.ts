@@ -20,6 +20,7 @@ import {
 @Injectable()
 export class SessionsService {
   private readonly sessionTimeout: number;
+  private readonly geolocationEnabled: boolean;
 
   constructor(
     private prisma: PrismaService,
@@ -29,6 +30,13 @@ export class SessionsService {
   ) {
     // Session timeout in hours (default 4 hours)
     this.sessionTimeout = 4 * 60 * 60 * 1000; // 4 hours in ms
+    
+    // Global geolocation flag from environment
+    this.geolocationEnabled = this.configService.get<boolean>('security.geolocationEnabled', true);
+    
+    if (!this.geolocationEnabled) {
+      console.log('⚠️ Geolocation checks are DISABLED globally');
+    }
   }
 
   /**
@@ -63,7 +71,12 @@ export class SessionsService {
     clientLat?: number,
     clientLng?: number,
   ): void {
-    // Skip if geolocation is disabled
+    // Skip if geolocation is disabled GLOBALLY (via environment variable)
+    if (!this.geolocationEnabled) {
+      return;
+    }
+
+    // Skip if geolocation is disabled for this restaurant
     if (!settings.geolocation?.enabled) {
       return;
     }
@@ -176,10 +189,13 @@ export class SessionsService {
         longitude: table.restaurant.longitude,
       },
       operatingStatus,
-      geolocationRequired: settings.geolocation?.enabled && 
+      // Geolocation is required only if BOTH global flag AND restaurant setting are enabled
+      geolocationRequired: this.geolocationEnabled && 
+        settings.geolocation?.enabled && 
         !!table.restaurant.latitude && 
         !!table.restaurant.longitude,
       geolocationRadius: settings.geolocation?.radiusMeters || 200,
+      geolocationGloballyDisabled: !this.geolocationEnabled,
       canJoin: table._count.sessions < table.capacity && operatingStatus.isOpen,
     };
   }

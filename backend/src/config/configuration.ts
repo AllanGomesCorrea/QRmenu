@@ -28,6 +28,8 @@ export default () => ({
     cooldownBetweenCodes: 60, // 60 seconds
     maxOrdersPerMinute: 5,
     maxItemsPerOrder: 20,
+    // Global geolocation flag - set to 'false' to disable geolocation checks
+    geolocationEnabled: process.env.GEOLOCATION_ENABLED !== 'false',
   },
 
   // Integrations (mock by default)

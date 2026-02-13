@@ -90,7 +90,7 @@ function ExpandableBillRow({ bill, isExpanded, onToggle, canManage, onPayment, i
   };
 
   const statusLabels = {
-    open: 'Em aberto',
+    open: 'Pendente',
     ready: 'Pronta para pagar',
     paid: 'Paga',
   };
@@ -173,31 +173,60 @@ function ExpandableBillRow({ bill, isExpanded, onToggle, canManage, onPayment, i
                 exit={{ opacity: 0, y: -20 }}
                 className="p-6"
               >
-                {/* Customer Info */}
-                {bill.orders[0]?.session?.customerName && (
-                  <div className="mb-4 p-3 bg-blue-50 rounded-xl border border-blue-100">
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                        <User className="w-5 h-5 text-blue-600" />
+                {/* Group orders by customer */}
+                {(() => {
+                  // Filter orders based on bill status
+                  const displayOrders = bill.orders.filter(order => 
+                    bill.status === 'paid' || order.status !== 'PAID'
+                  );
+                  
+                  // Group by customer session
+                  const ordersByCustomer = displayOrders.reduce((acc, order) => {
+                    const customerKey = order.session?.customerName || 'Cliente não identificado';
+                    if (!acc[customerKey]) {
+                      acc[customerKey] = {
+                        customerName: order.session?.customerName || 'Cliente não identificado',
+                        customerPhone: order.session?.customerPhone || '',
+                        orders: [],
+                        total: 0,
+                      };
+                    }
+                    acc[customerKey].orders.push(order);
+                    if (order.status !== 'CANCELLED') {
+                      acc[customerKey].total += order.total;
+                    }
+                    return acc;
+                  }, {} as Record<string, { customerName: string; customerPhone: string; orders: typeof displayOrders; total: number }>);
+                  
+                  const customerGroups = Object.values(ordersByCustomer);
+                  
+                  return customerGroups.map((customer, customerIndex) => (
+                    <div key={customerIndex} className="mb-6 last:mb-0">
+                      {/* Customer Header */}
+                      <div className="mb-3 p-3 bg-blue-50 rounded-xl border border-blue-100 flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                            <User className="w-5 h-5 text-blue-600" />
+                          </div>
+                          <div>
+                            <p className="font-medium text-gray-900">{customer.customerName}</p>
+                            {customer.customerPhone && (
+                              <p className="text-sm text-gray-500 flex items-center gap-1">
+                                <Phone className="w-3 h-3" />
+                                {customer.customerPhone}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-gray-500">Subtotal</p>
+                          <p className="font-bold text-primary-600">{formatCurrency(customer.total)}</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-medium text-gray-900">{bill.orders[0].session.customerName}</p>
-                        <p className="text-sm text-gray-500 flex items-center gap-1">
-                          <Phone className="w-3 h-3" />
-                          {bill.orders[0].session.customerPhone}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
 
-                {/* Orders List */}
-                <div className="space-y-4">
-                  {/* Para mesas abertas/prontas, mostrar apenas pedidos não-PAID (ativos) */}
-                  {/* Para mesas pagas, mostrar todos os pedidos */}
-                  {bill.orders
-                    .filter(order => bill.status === 'paid' || order.status !== 'PAID')
-                    .map((order, orderIndex) => (
+                      {/* Customer's Orders */}
+                      <div className="space-y-3 pl-2 border-l-2 border-blue-100">
+                        {customer.orders.map((order, orderIndex) => (
                     <motion.div
                       key={order.id}
                       initial={{ opacity: 0, x: -20 }}
@@ -266,7 +295,10 @@ function ExpandableBillRow({ bill, isExpanded, onToggle, canManage, onPayment, i
                       </div>
                     </motion.div>
                   ))}
-                </div>
+                      </div>
+                    </div>
+                  ));
+                })()}
 
                 {/* Bill Summary */}
                 <motion.div
@@ -466,8 +498,8 @@ export default function CashierPage() {
   }, [tableBills, filter, searchTerm]);
 
   const stats = useMemo(() => ({
-    pending: tableBills.filter(b => b.status === 'open').length,
-    totalPending: tableBills.filter(b => b.status === 'open').reduce((acc, b) => acc + b.totalAmount, 0),
+    unpaidCount: tableBills.filter(b => b.status === 'open' || b.status === 'ready').length,
+    totalUnpaid: tableBills.filter(b => b.status === 'open' || b.status === 'ready').reduce((acc, b) => acc + b.totalAmount, 0),
     // Usar todayStats.revenue do backend para garantir consistência com Dashboard e Relatórios
     paidToday: todayStats?.revenue || 0,
   }), [tableBills, todayStats]);
@@ -516,8 +548,8 @@ export default function CashierPage() {
               <Clock className="w-6 h-6 text-amber-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">Contas Abertas</p>
-              <p className="text-2xl font-bold text-gray-900">{stats.pending}</p>
+              <p className="text-sm text-gray-500">Contas a Pagar</p>
+              <p className="text-2xl font-bold text-gray-900">{stats.unpaidCount}</p>
             </div>
           </div>
         </motion.div>
@@ -533,9 +565,9 @@ export default function CashierPage() {
               <Receipt className="w-6 h-6 text-primary-600" />
             </div>
             <div>
-              <p className="text-sm text-gray-500">Valor em Aberto</p>
+              <p className="text-sm text-gray-500">Total a Receber</p>
               <p className="text-2xl font-bold text-gray-900">
-                {formatCurrency(stats.totalPending)}
+                {formatCurrency(stats.totalUnpaid)}
               </p>
             </div>
           </div>
@@ -581,8 +613,8 @@ export default function CashierPage() {
         <div className="flex gap-2">
           {[
             { id: 'all', label: 'Todas', color: 'gray-900' },
-            { id: 'open', label: 'Abertas', color: 'amber-500' },
-            { id: 'ready', label: 'Prontas', color: 'green-500' },
+            { id: 'open', label: 'Pendentes', color: 'amber-500' },
+            { id: 'ready', label: 'Prontas p/ Pagar', color: 'green-500' },
             { id: 'paid', label: 'Pagas', color: 'gray-500' },
           ].map((f) => (
             <button
@@ -662,7 +694,7 @@ export default function CashierPage() {
           <div className="text-center py-12">
             <Receipt className="w-12 h-12 text-gray-300 mx-auto mb-3" />
             <p className="text-gray-500">
-              {searchTerm ? 'Nenhuma conta encontrada' : 'Nenhuma conta em aberto'}
+              {searchTerm ? 'Nenhuma conta encontrada' : 'Nenhuma conta pendente'}
             </p>
           </div>
         )}

@@ -50,12 +50,18 @@ export function useSocket() {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
       queryClient.invalidateQueries({ queryKey: ['order-stats'] });
       
+      const orderNum = String(data.orderNumber || '').padStart(3, '0');
+      const tableNum = data.tableNumber || 'N/A';
+      const itemCount = data.itemCount || 0;
+      const customerName = data.customerName || '';
+      
       // Add to notification store
       addNotification({
         type: 'order',
-        title: `Novo Pedido #${data.orderNumber || ''}`,
-        message: `Mesa ${data.tableNumber || 'N/A'} - ${data.itemCount || 0} itens`,
+        title: `Novo Pedido #${orderNum}`,
+        message: `Mesa ${tableNum}${customerName ? ` • ${customerName}` : ''} - ${itemCount} ${itemCount === 1 ? 'item' : 'itens'}`,
         tableNumber: data.tableNumber,
+        tableName: data.tableName,
         orderId: data.orderId,
       });
       
@@ -63,7 +69,7 @@ export function useSocket() {
       playNotificationSound();
       
       // Browser notification
-      showBrowserNotification('Novo Pedido', `Mesa ${data.tableNumber || 'N/A'}`);
+      showBrowserNotification('Novo Pedido', `Mesa ${tableNum}${customerName ? ` - ${customerName}` : ''}`);
     });
 
     socket.on('order:updated', (data) => {

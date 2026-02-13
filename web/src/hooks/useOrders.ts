@@ -30,6 +30,12 @@ export interface Order {
   total: number;
   notes?: string;
   items: OrderItem[];
+  session?: {
+    id: string;
+    customerName: string;
+    customerPhone: string;
+  };
+  isMyOrder?: boolean; // true if this order belongs to current session
   createdAt: string;
   updatedAt: string;
 }

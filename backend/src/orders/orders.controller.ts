@@ -53,15 +53,15 @@ export class OrdersController {
   @Public()
   @Get('session/my-orders')
   @ApiHeader({ name: 'x-session-token', required: true })
-  @ApiOperation({ summary: 'Listar pedidos da sessão' })
-  @ApiResponse({ status: 200, description: 'Lista de pedidos' })
-  async getSessionOrders(@Headers('x-session-token') sessionToken: string) {
+  @ApiOperation({ summary: 'Listar todos os pedidos da mesa (destacando os próprios)' })
+  @ApiResponse({ status: 200, description: 'Lista de pedidos da mesa com isMyOrder flag' })
+  async getTableOrders(@Headers('x-session-token') sessionToken: string) {
     const tokenData = await this.sessionsService.validateSessionToken(sessionToken);
     if (!tokenData) {
       throw new ForbiddenException('Sessão inválida ou expirada');
     }
 
-    return this.ordersService.getSessionOrders(tokenData.sessionId);
+    return this.ordersService.getTableOrdersForSession(tokenData.sessionId);
   }
 
   @Public()

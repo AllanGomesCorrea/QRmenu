@@ -148,7 +148,14 @@ export class OrdersService {
     // Publish event for real-time notifications
     await this.publishOrderEvent('order:created', {
       restaurantId: session.table.restaurantId,
-      order,
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      tableId: order.tableId,
+      tableNumber: order.table?.number,
+      tableName: order.table?.name,
+      itemCount: order.items?.length || 0,
+      total: order.total,
+      customerName: session.customerName,
     });
 
     return order;
@@ -179,16 +186,47 @@ export class OrdersService {
   }
 
   /**
-   * Get orders for a specific table session
+   * Get all orders for the table (not just this session)
+   * Returns orders with session info to identify who ordered what
    */
-  async getSessionOrders(sessionId: string) {
-    return this.prisma.order.findMany({
-      where: { sessionId },
+  async getTableOrdersForSession(sessionId: string) {
+    // First, get the session to find the tableId
+    const session = await this.prisma.tableSession.findUnique({
+      where: { id: sessionId },
+      select: { tableId: true },
+    });
+
+    if (!session) {
+      return [];
+    }
+
+    // Get ALL orders from this table (from all active sessions)
+    const orders = await this.prisma.order.findMany({
+      where: { 
+        tableId: session.tableId,
+        // Only show orders from active sessions or recent orders
+        status: {
+          notIn: [OrderStatus.CANCELLED],
+        },
+      },
       include: {
         items: true,
+        session: {
+          select: {
+            id: true,
+            customerName: true,
+            customerPhone: true,
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    // Mark which orders belong to the current session
+    return orders.map(order => ({
+      ...order,
+      isMyOrder: order.sessionId === sessionId,
+    }));
   }
 
   /**

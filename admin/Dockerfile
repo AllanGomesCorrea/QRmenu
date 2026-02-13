@@ -13,6 +13,6 @@ COPY . .
 # Expose port
 EXPOSE 5174
 
-# Development command (overridden in docker compose)
+# Development command (overridden in docker-compose)
 CMD ["npm", "run", "dev", "--", "--host", "--port", "5174"]
 

@@ -211,12 +211,20 @@ export default function ReportsPage() {
   }
 
   if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center h-96 text-center">
-        <p className="text-red-500 mb-2">Erro ao carregar relatórios</p>
-        <p className="text-gray-500 text-sm">Verifique se você está logado e tente novamente</p>
-      </div>
-    );
+    // If it's an auth error (401/403), show a specific message
+    const isAuthError = (error as any)?.response?.status === 401 || (error as any)?.response?.status === 403;
+    
+    if (isAuthError) {
+      return (
+        <div className="flex flex-col items-center justify-center h-96 text-center">
+          <p className="text-red-500 mb-2">Sessão expirada</p>
+          <p className="text-gray-500 text-sm">Faça login novamente para acessar os relatórios</p>
+        </div>
+      );
+    }
+    
+    // For any other error, show an empty/no data state instead of a scary error
+    // This commonly happens when there's simply no data yet
   }
 
   return (
@@ -257,10 +265,12 @@ export default function ReportsPage() {
             <div className="stat-icon">
               <DollarSign className="w-5 h-5" />
             </div>
-            <span className={`stat-change ${stats.revenueChange >= 0 ? 'stat-change-positive' : 'stat-change-negative'}`}>
-              {stats.revenueChange >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-              {formatPercentage(stats.revenueChange)}
-            </span>
+            {stats.revenueChange !== 0 && (
+              <span className={`stat-change ${stats.revenueChange >= 0 ? 'stat-change-positive' : 'stat-change-negative'}`}>
+                {stats.revenueChange >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                {formatPercentage(stats.revenueChange)}
+              </span>
+            )}
           </div>
           <p className="stat-label">Receita Total</p>
           <p className="stat-value">{formatCurrency(stats.totalRevenue)}</p>
@@ -272,10 +282,12 @@ export default function ReportsPage() {
             <div className="stat-icon">
               <ShoppingBag className="w-5 h-5" />
             </div>
-            <span className={`stat-change ${stats.ordersChange >= 0 ? 'stat-change-positive' : 'stat-change-negative'}`}>
-              {stats.ordersChange >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-              {formatPercentage(stats.ordersChange)}
-            </span>
+            {stats.ordersChange !== 0 && (
+              <span className={`stat-change ${stats.ordersChange >= 0 ? 'stat-change-positive' : 'stat-change-negative'}`}>
+                {stats.ordersChange >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                {formatPercentage(stats.ordersChange)}
+              </span>
+            )}
           </div>
           <p className="stat-label">Total de Pedidos</p>
           <p className="stat-value">{stats.totalOrders}</p>
@@ -287,10 +299,12 @@ export default function ReportsPage() {
             <div className="stat-icon">
               <BarChart3 className="w-5 h-5" />
             </div>
-            <span className={`stat-change ${stats.avgOrderChange >= 0 ? 'stat-change-positive' : 'stat-change-negative'}`}>
-              {stats.avgOrderChange >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-              {formatPercentage(stats.avgOrderChange)}
-            </span>
+            {stats.avgOrderChange !== 0 && (
+              <span className={`stat-change ${stats.avgOrderChange >= 0 ? 'stat-change-positive' : 'stat-change-negative'}`}>
+                {stats.avgOrderChange >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                {formatPercentage(stats.avgOrderChange)}
+              </span>
+            )}
           </div>
           <p className="stat-label">Ticket Médio</p>
           <p className="stat-value">{formatCurrency(stats.avgOrderValue)}</p>

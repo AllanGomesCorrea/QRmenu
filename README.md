@@ -2,76 +2,140 @@
 
 Sistema SaaS de pedidos por QR Code para restaurantes com atualização em tempo real.
 
+## 📚 Documentação Detalhada
+
+| Módulo | README | Descrição |
+|--------|--------|-----------|
+| 🔧 **Backend** | [backend/README.md](backend/README.md) | API NestJS, endpoints, WebSocket, banco de dados |
+| 📱 **Web** | [web/README.md](web/README.md) | App do cliente, cardápio, pedidos |
+| 🎛️ **Admin** | [admin/README.md](admin/README.md) | Painel administrativo, cozinha, caixa |
+
+---
+
+## 🏗️ Arquitetura Geral
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              CLIENTES                                        │
+│                                                                              │
+│   ┌───────────────────┐    ┌───────────────────┐    ┌───────────────────┐   │
+│   │   📱 Web App      │    │   🎛️ Admin Panel  │    │   📲 Mobile App   │   │
+│   │   (Cliente)       │    │   (Gestão)        │    │   (Futuro)        │   │
+│   │   React + Vite    │    │   React + Vite    │    │                   │   │
+│   │   :5173           │    │   :5174           │    │                   │   │
+│   └─────────┬─────────┘    └─────────┬─────────┘    └───────────────────┘   │
+│             │                        │                                       │
+│             └──────────┬─────────────┘                                       │
+│                        │                                                     │
+│                   HTTP │ WebSocket                                           │
+│                        │                                                     │
+└────────────────────────┼─────────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           🔧 BACKEND (NestJS)                                │
+│                              :3000                                           │
+│   ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐        │
+│   │ Auth        │  │ Restaurants │  │ Orders      │  │ WebSocket   │        │
+│   │ (JWT+RSA)   │  │ (Multi-     │  │ (Pedidos)   │  │ (Real-time) │        │
+│   │             │  │  tenant)    │  │             │  │             │        │
+│   └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘        │
+│   ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐        │
+│   │ Tables      │  │ Menu        │  │ Sessions    │  │ Reports     │        │
+│   │ (QR Code)   │  │ (Cardápio)  │  │ (Clientes)  │  │ (Métricas)  │        │
+│   └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘        │
+└─────────────────────────────────────────────────────────────────────────────┘
+                         │                    │
+                         │                    │
+              ┌──────────┴──────────┐   ┌─────┴──────────────┐
+              ▼                     │   │                    ▼
+    ┌──────────────────┐            │   │        ┌──────────────────┐
+    │  🐘 PostgreSQL   │            │   │        │    🔴 Redis      │
+    │  (Dados)         │            │   │        │  (Cache/Sessions)│
+    │  :5432           │            │   │        │    :6379         │
+    └──────────────────┘            │   │        └──────────────────┘
+                                    │   │
+                                    └───┘
+                                 Docker Compose
+```
+
+---
+
 ## 📋 Pré-requisitos
 
-- **Node.js** 18+ 
+- **Node.js** 18+
 - **Docker** e **Docker Compose**
 - **npm** ou **yarn**
 
+---
+
 ## 🚀 Quick Start
 
-### 1. Configurar ambiente
+### Setup Completo (Primeira vez)
 
 ```bash
-# Criar arquivos .env
-npm run setup:env
+# 1. Clonar repositório
+git clone <repo-url>
+cd qrmenu
+
+# 2. Setup automatizado (cria .env, instala deps, inicia Docker, migra banco)
+npm run setup
 ```
 
-### 2. Instalar dependências
+### Desenvolvimento Diário
 
 ```bash
-npm run install:all
+# Iniciar tudo (Docker + Backend + Web + Admin)
+npm run dev:all
+
+# OU iniciar apenas o que precisa:
+npm run dev:infra      # Apenas PostgreSQL + Redis
+npm run dev:services   # Apenas Backend + Web + Admin
+npm run dev:backend    # Apenas Backend
+npm run dev:web        # Apenas Web
+npm run dev:admin      # Apenas Admin
 ```
 
-### 3. Iniciar infraestrutura (PostgreSQL + Redis)
+### Parar Serviços
 
 ```bash
-npm run dev:infra
+# Parar serviços (mantém containers)
+npm run kill
+
+# Parar tudo (mantém containers Docker)
+npm run kill:all
+
+# Parar e remover containers Docker
+npm run kill:all:down
+
+# Parar e remover containers + APAGAR DADOS
+npm run dev:infra:reset
 ```
 
-Aguarde alguns segundos para os containers iniciarem.
-
-### 4. Configurar banco de dados
-
-```bash
-# Gerar cliente Prisma
-npm run db:generate
-
-# Executar migrações
-npm run db:migrate
-
-# Popular com dados de teste
-npm run db:seed
-```
-
-### 5. Iniciar todos os serviços
-
-```bash
-npm run dev:services
-```
-
-Ou simplesmente:
-
-```bash
-npm start
-```
+---
 
 ## 🌐 URLs de Acesso
 
 | Serviço | URL | Descrição |
 |---------|-----|-----------|
-| **Web** | http://localhost:5173 | App do cliente |
-| **Admin** | http://localhost:5174 | Painel administrativo |
-| **API** | http://localhost:3000 | Backend API |
-| **WebSocket** | http://localhost:3000/ws | Gateway tempo real |
+| **Web App** | http://localhost:5173 | App do cliente (QR Code) |
+| **Admin Panel** | http://localhost:5174 | Painel administrativo |
+| **API** | http://localhost:3000 | Backend REST |
+| **WebSocket** | ws://localhost:3000 | Gateway tempo real |
+| **Prisma Studio** | http://localhost:5555 | UI do banco (via `npm run db:studio`) |
+
+---
 
 ## 👤 Credenciais de Teste
 
 ### Super Admin
-- **Email:** admin@qrmenu.com
-- **Senha:** Admin@123
+
+| Email | Senha | Acesso |
+|-------|-------|--------|
+| admin@qrmenu.com | Admin@123 | Todos os restaurantes |
 
 ### Casa do Sabor
+
 | Cargo | Email | Senha |
 |-------|-------|-------|
 | Admin | joao@casadosabor.com | Admin@123 |
@@ -81,98 +145,117 @@ npm start
 | Caixa | lucia@casadosabor.com | Admin@123 |
 
 ### Pizzaria Bella
+
 | Cargo | Email | Senha |
 |-------|-------|-------|
 | Admin | maria@pizzariabella.com | Admin@123 |
 | Cozinha | roberto@pizzariabella.com | Admin@123 |
 | Garçom | fernanda@pizzariabella.com | Admin@123 |
 
+---
+
 ## 🔐 Permissões por Cargo (RBAC)
 
-| Cargo | Acesso no Painel Admin | Pode Editar? |
-|-------|------------------------|--------------|
-| **SUPER_ADMIN** | Tudo (todos os restaurantes) | ✅ Tudo |
-| **ADMIN** | Dashboard, Cozinha, Caixa, Mesas, Cardápio, Usuários, Relatórios, Configurações | ✅ Tudo |
-| **MANAGER** | Dashboard, Cozinha, Caixa, Mesas, Cardápio | ❌ Apenas visualização |
-| **KITCHEN** | Cozinha | ✅ Atualizar status de pedidos |
-| **WAITER** | Mesas, Cozinha | ❌ Apenas visualização |
-| **CASHIER** | Caixa, Mesas | ✅ Processar pagamentos |
+| Cargo | Páginas | Ações |
+|-------|---------|-------|
+| **SUPER_ADMIN** | Todas | Tudo em todos os restaurantes |
+| **ADMIN** | Dashboard, Cozinha, Caixa, Mesas, Cardápio, Usuários, Relatórios, Config | Tudo no próprio restaurante |
+| **MANAGER** | Dashboard, Cozinha, Caixa, Mesas, Cardápio | Somente visualização |
+| **KITCHEN** | Cozinha | Atualizar status de pedidos |
+| **WAITER** | Mesas, Cozinha | Visualizar mesas e pedidos |
+| **CASHIER** | Caixa, Mesas | Processar pagamentos |
 
-### Detalhes das Permissões do Manager (Gerente)
-
-O **Manager** tem acesso de **somente visualização** às seguintes áreas:
-- ✅ **Dashboard** - Visualizar métricas e estatísticas
-- ✅ **Cozinha** - Visualizar pedidos (não pode alterar status)
-- ✅ **Caixa** - Visualizar contas
-- ✅ **Mesas** - Visualizar mesas e QR Codes
-- ✅ **Cardápio** - Visualizar categorias e itens
-
-O **Manager NÃO pode**:
-- ❌ Criar/editar/excluir mesas
-- ❌ Criar/editar/excluir categorias do cardápio
-- ❌ Criar/editar/excluir itens do cardápio
-- ❌ Alterar disponibilidade de itens
-- ❌ Acessar Usuários, Relatórios ou Configurações
+---
 
 ## 📁 Estrutura do Projeto
 
 ```
 qrmenu/
-├── backend/          # API NestJS
-│   ├── prisma/       # Schema e migrations
-│   └── src/          # Código fonte
-├── web/              # Frontend cliente (React + Vite)
-│   └── src/
-├── admin/            # Frontend admin (React + Vite)
-│   └── src/
-├── scripts/          # Scripts de automação
-└── docker compose.yml
+├── backend/              # 🔧 API NestJS
+│   ├── prisma/           #    Schema e migrations
+│   ├── src/              #    Código fonte
+│   ├── scripts/          #    Utilitários
+│   └── README.md         #    📖 Documentação detalhada
+│
+├── web/                  # 📱 Frontend cliente (React + Vite)
+│   ├── src/
+│   └── README.md         #    📖 Documentação detalhada
+│
+├── admin/                # 🎛️ Frontend admin (React + Vite)
+│   ├── src/
+│   └── README.md         #    📖 Documentação detalhada
+│
+├── scripts/              # Scripts de automação
+│   ├── kill-ports.js     #    Mata processos nas portas
+│   └── setup-env.js      #    Cria arquivos .env
+│
+├── docker-compose.yml    # Infraestrutura Docker
+├── package.json          # Scripts npm do workspace
+└── README.md             # 📖 Este arquivo
 ```
 
+---
+
 ## 📝 Scripts Disponíveis
+
+### Desenvolvimento
 
 | Comando | Descrição |
 |---------|-----------|
 | `npm run dev:all` | Inicia infra + todos os serviços |
 | `npm run dev:services` | Inicia backend, web e admin |
-| `npm run dev:infra` | Inicia PostgreSQL e Redis |
-| `npm run dev:infra:stop` | Para os containers Docker |
+| `npm run dev:infra` | Inicia PostgreSQL e Redis (Docker) |
+| `npm run dev:infra:stop` | Para containers (mantém) |
+| `npm run dev:infra:down` | Para e remove containers |
+| `npm run dev:infra:reset` | Para, remove containers e APAGA volumes |
 | `npm run dev:backend` | Inicia apenas o backend |
 | `npm run dev:web` | Inicia apenas o frontend cliente |
 | `npm run dev:admin` | Inicia apenas o painel admin |
+
+### Controle
+
+| Comando | Descrição |
+|---------|-----------|
 | `npm run kill` | Mata processos nas portas 3000, 5173, 5174 |
-| `npm run kill:all` | Mata processos + para containers Docker |
+| `npm run kill:all` | Mata processos + para containers |
+| `npm run kill:all:down` | Mata processos + remove containers |
 | `npm run restart` | Mata processos e reinicia serviços |
-| `npm run db:migrate` | Executa migrações do banco |
+
+### Banco de Dados
+
+| Comando | Descrição |
+|---------|-----------|
+| `npm run db:migrate` | Executa migrações do Prisma |
 | `npm run db:seed` | Popula banco com dados de teste |
 | `npm run db:studio` | Abre Prisma Studio (UI do banco) |
 | `npm run db:reset` | Reseta banco e reexecuta migrações |
+| `npm run db:generate` | Regenera cliente Prisma |
+
+### Setup
+
+| Comando | Descrição |
+|---------|-----------|
+| `npm run setup` | Setup completo automatizado |
+| `npm run setup:env` | Cria arquivos .env |
+| `npm run install:all` | Instala todas as dependências |
+
+---
 
 ## 🧪 Testando a Aplicação
 
 ### 1. Testar como Admin
 
 1. Acesse http://localhost:5174
-2. Faça login com `joao@casadosabor.com` / `Admin@123`
-3. Navegue pelo painel: Dashboard, Cardápio, Mesas, Cozinha
+2. Login: `joao@casadosabor.com` / `Admin@123`
+3. Navegue: Dashboard → Cardápio → Mesas → Cozinha
 
-### 2. Testar diferentes cargos
+### 2. Testar como Cliente (QR Code)
 
-- **Cozinha:** Login com `carlos@casadosabor.com` → Verá apenas a tela de Cozinha
-- **Caixa:** Login com `lucia@casadosabor.com` → Verá apenas Caixa e Mesas
-- **Garçom:** Login com `pedro@casadosabor.com` → Verá apenas Mesas e Cozinha
-
-### 2. Testar como Cliente
-
-1. No painel Admin, vá em "Mesas"
+1. No Admin, vá em **Mesas**
 2. Clique no QR Code de uma mesa
 3. Copie o link ou escaneie o QR
-4. Complete o fluxo de verificação (o código aparece no console do backend)
-5. Navegue pelo cardápio e faça um pedido
-
-### 3. Verificar código SMS (Mock)
-
-Como estamos usando mock para SMS, o código de verificação aparece no console do backend:
+4. Preencha nome e telefone
+5. O código SMS aparece no **console do backend**:
 
 ```
 ========================================
@@ -183,43 +266,143 @@ Como estamos usando mock para SMS, o código de verificação aparece no console
 ========================================
 ```
 
-### 4. Testar tempo real
+6. Digite o código e navegue pelo cardápio
+7. Faça um pedido
 
-1. Abra a tela da Cozinha no Admin (http://localhost:5174/kitchen)
+### 3. Testar Tempo Real
+
+1. Abra **Cozinha** no Admin (http://localhost:5174/kitchen)
 2. Faça um pedido pelo app do cliente
-3. Veja o pedido aparecer em tempo real na cozinha
+3. Veja o pedido aparecer instantaneamente
 4. Confirme e prepare o pedido
 5. Veja a atualização no app do cliente
+
+### 4. Testar Diferentes Cargos
+
+- **Cozinha:** `carlos@casadosabor.com` → Apenas tela de Cozinha
+- **Caixa:** `lucia@casadosabor.com` → Apenas Caixa e Mesas
+- **Garçom:** `pedro@casadosabor.com` → Apenas Mesas e Cozinha
+- **Gerente:** `ana@casadosabor.com` → Visualização (sem edição)
+
+---
 
 ## 🐛 Solução de Problemas
 
 ### Erro de conexão com banco
+
 ```bash
-# Verifique se os containers estão rodando
+# Verificar se containers estão rodando
 docker ps
 
-# Reinicie a infraestrutura
+# Reiniciar infraestrutura
 npm run dev:infra:stop
 npm run dev:infra
 ```
 
 ### Erro de dependências
+
 ```bash
-# Reinstale tudo
+# Reinstalar tudo
 rm -rf node_modules backend/node_modules web/node_modules admin/node_modules
 npm run install:all
 ```
 
 ### Erro de Prisma
+
 ```bash
-# Regenere o cliente
+# Regenerar cliente
 npm run db:generate
 
-# Ou resete tudo
+# Ou resetar tudo
 npm run db:reset
 ```
+
+### Sessão inválida no cliente
+
+```bash
+# Limpar localStorage no navegador
+# DevTools (F12) → Application → Local Storage → Clear
+```
+
+### Portas ocupadas
+
+```bash
+# Matar processos nas portas
+npm run kill
+```
+
+---
+
+## 🔧 Variáveis de Ambiente
+
+### Backend (.env)
+
+```env
+PORT=3000
+DATABASE_URL="postgresql://qrmenu:qrmenu123@localhost:5432/qrmenu"
+REDIS_URL="redis://localhost:6379"
+JWT_SECRET="sua-chave-secreta"
+GEOLOCATION_ENABLED=false
+```
+
+### Web (.env)
+
+```env
+VITE_API_URL=http://localhost:3000
+VITE_WS_URL=http://localhost:3000
+```
+
+### Admin (.env)
+
+```env
+VITE_API_URL=http://localhost:3000
+VITE_WS_URL=http://localhost:3000
+```
+
+---
+
+## 🐳 Docker
+
+### Volumes (Dados Persistentes)
+
+| Volume | Conteúdo |
+|--------|----------|
+| `postgres_data` | Banco de dados PostgreSQL |
+| `redis_data` | Cache e sessões Redis |
+
+> ⚠️ Os volumes são **preservados** ao parar containers com `docker-compose stop` ou `docker-compose down`. Use `docker-compose down -v` para **apagar dados**.
+
+### Comandos Úteis
+
+```bash
+# Ver containers rodando
+docker ps
+
+# Ver logs do PostgreSQL
+docker logs qrmenu-postgres
+
+# Ver logs do Redis
+docker logs qrmenu-redis
+
+# Entrar no PostgreSQL
+docker exec -it qrmenu-postgres psql -U qrmenu
+
+# Entrar no Redis
+docker exec -it qrmenu-redis redis-cli
+```
+
+---
+
+## 📞 Suporte
+
+Para detalhes específicos, consulte a documentação de cada módulo:
+
+- **Backend:** [backend/README.md](backend/README.md)
+- **Web:** [web/README.md](web/README.md)
+- **Admin:** [admin/README.md](admin/README.md)
+
+---
 
 ## 📄 Licença
 
 Projeto privado - Todos os direitos reservados.
-

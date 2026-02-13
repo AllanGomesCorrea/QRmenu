@@ -1,4 +1,4 @@
-import { PrismaClient, UserRole, TableStatus, OrderStatus, OrderItemStatus } from '@prisma/client';
+import { PrismaClient, UserRole, TableStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
@@ -502,8 +502,24 @@ const restaurantsData: RestaurantData[] = [
   }
 ];
 
+// Usuários especiais com nomes reais para Casa do Sabor e Pizzaria Bella
+const specialUsers: Record<string, { role: UserRole; name: string; email: string }[]> = {
+  'casa-do-sabor': [
+    { role: UserRole.ADMIN, name: 'João Silva', email: 'joao@casadosabor.com' },
+    { role: UserRole.MANAGER, name: 'Ana Oliveira', email: 'ana@casadosabor.com' },
+    { role: UserRole.KITCHEN, name: 'Carlos Santos', email: 'carlos@casadosabor.com' },
+    { role: UserRole.WAITER, name: 'Pedro Costa', email: 'pedro@casadosabor.com' },
+    { role: UserRole.CASHIER, name: 'Lucia Ferreira', email: 'lucia@casadosabor.com' },
+  ],
+  'pizzaria-bella': [
+    { role: UserRole.ADMIN, name: 'Maria Souza', email: 'maria@pizzariabella.com' },
+    { role: UserRole.KITCHEN, name: 'Roberto Lima', email: 'roberto@pizzariabella.com' },
+    { role: UserRole.WAITER, name: 'Fernanda Alves', email: 'fernanda@pizzariabella.com' },
+  ],
+};
+
 async function main() {
-  console.log('🌱 Starting comprehensive seed...');
+  console.log('🌱 Starting seed...');
 
   // Clean database first (development only)
   await cleanDatabase();
@@ -513,11 +529,51 @@ async function main() {
   console.log('✅ Super Admin created:', superAdmin.email);
 
   const hashedPassword = await bcrypt.hash('Admin@123', 10);
-  const allMenuItems: { restaurantId: string; items: any[] }[] = [];
-  const allTables: { restaurantId: string; tables: any[] }[] = [];
 
-  // Create all 10 restaurants with their data
+  // Create all restaurants with their data
   for (const restaurantData of restaurantsData) {
+    // Determine users for this restaurant
+    const special = specialUsers[restaurantData.slug];
+    const usersToCreate = special
+      ? special.map(u => ({
+          name: u.name,
+          email: u.email,
+          password: hashedPassword,
+          role: u.role,
+        }))
+      : [
+          {
+            name: `Admin ${restaurantData.name}`,
+            email: `admin@${restaurantData.slug}.com`,
+            password: hashedPassword,
+            role: UserRole.ADMIN,
+          },
+          {
+            name: `Gerente ${restaurantData.name}`,
+            email: `gerente@${restaurantData.slug}.com`,
+            password: hashedPassword,
+            role: UserRole.MANAGER,
+          },
+          {
+            name: `Cozinha ${restaurantData.name}`,
+            email: `cozinha@${restaurantData.slug}.com`,
+            password: hashedPassword,
+            role: UserRole.KITCHEN,
+          },
+          {
+            name: `Garçom ${restaurantData.name}`,
+            email: `garcom@${restaurantData.slug}.com`,
+            password: hashedPassword,
+            role: UserRole.WAITER,
+          },
+          {
+            name: `Caixa ${restaurantData.name}`,
+            email: `caixa@${restaurantData.slug}.com`,
+            password: hashedPassword,
+            role: UserRole.CASHIER,
+          },
+        ];
+
     const restaurant = await prisma.restaurant.create({
       data: {
         name: restaurantData.name,
@@ -547,7 +603,7 @@ async function main() {
           },
           geolocation: {
             enabled: true,
-            radiusMeters: 500, // 500 meters for testing
+            radiusMeters: 500,
           },
           security: {
             requireTableOccupied: false,
@@ -556,69 +612,36 @@ async function main() {
           },
         },
         users: {
-          create: [
-            {
-              name: restaurantData.slug === 'casa-do-sabor' ? 'João Silva' : `Admin ${restaurantData.name}`,
-              email: restaurantData.slug === 'casa-do-sabor' ? 'joao@casadosabor.com' : `admin@${restaurantData.slug}.com`,
-              password: hashedPassword,
-              phone: `11${Math.floor(900000000 + Math.random() * 99999999)}`,
-              role: UserRole.ADMIN,
-            },
-            {
-              name: `Gerente ${restaurantData.name}`,
-              email: `gerente@${restaurantData.slug}.com`,
-              password: hashedPassword,
-              role: UserRole.MANAGER,
-            },
-            {
-              name: `Cozinha ${restaurantData.name}`,
-              email: `cozinha@${restaurantData.slug}.com`,
-              password: hashedPassword,
-              role: UserRole.KITCHEN,
-            },
-            {
-              name: `Garçom ${restaurantData.name}`,
-              email: `garcom@${restaurantData.slug}.com`,
-              password: hashedPassword,
-              role: UserRole.WAITER,
-            },
-            {
-              name: `Caixa ${restaurantData.name}`,
-              email: `caixa@${restaurantData.slug}.com`,
-              password: hashedPassword,
-              role: UserRole.CASHIER,
-            },
-          ],
+          create: usersToCreate,
         },
       },
     });
 
-    // Create 8-15 tables per restaurant
-    const numTables = 8 + Math.floor(Math.random() * 8);
+    // Create tables (all ACTIVE, ready for customers)
+    const numTables = 8 + Math.floor(Math.random() * 8); // 8-15 tables
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    const tables = await Promise.all(
+
+    await Promise.all(
       Array.from({ length: numTables }, (_, i) => {
         const qrCode = `${restaurantData.slug.toUpperCase()}-M${i + 1}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
         const qrCodeUrl = `${frontendUrl}/r/${restaurantData.slug}/mesa/${qrCode}`;
         return prisma.table.create({
           data: {
             number: i + 1,
-            name: i < numTables / 2 ? `Salão ${i + 1}` : `Varanda ${i - Math.floor(numTables / 2) + 1}`,
+            name: i < Math.floor(numTables / 2) ? `Salão ${i + 1}` : `Varanda ${i - Math.floor(numTables / 2) + 1}`,
             capacity: [2, 4, 4, 6][Math.floor(Math.random() * 4)],
             qrCode,
             qrCodeUrl,
-            status: TableStatus.ACTIVE, // All tables start as ACTIVE
-            section: i < numTables / 2 ? 'Salão Principal' : 'Varanda',
+            status: TableStatus.ACTIVE,
+            section: i < Math.floor(numTables / 2) ? 'Salão Principal' : 'Varanda',
             restaurantId: restaurant.id,
           },
         });
       })
     );
 
-    allTables.push({ restaurantId: restaurant.id, tables });
-
     // Create categories and menu items
-    const menuItems: any[] = [];
+    let menuItemCount = 0;
     for (let catIndex = 0; catIndex < restaurantData.categories.length; catIndex++) {
       const category = restaurantData.categories[catIndex];
       const createdCategory = await prisma.menuCategory.create({
@@ -630,7 +653,7 @@ async function main() {
       });
 
       for (const item of category.items) {
-        const createdItem = await prisma.menuItem.create({
+        await prisma.menuItem.create({
           data: {
             name: item.name,
             description: item.description,
@@ -644,36 +667,38 @@ async function main() {
             restaurantId: restaurant.id,
           },
         });
-        menuItems.push(createdItem);
+        menuItemCount++;
       }
     }
 
-    allMenuItems.push({ restaurantId: restaurant.id, items: menuItems });
-    console.log(`✅ Restaurant created: ${restaurant.name} with ${tables.length} tables and ${menuItems.length} menu items`);
+    console.log(`✅ ${restaurant.name}: ${numTables} mesas, ${menuItemCount} itens no cardápio`);
   }
 
-  // Create sample orders for each restaurant
-  for (const { restaurantId, items } of allMenuItems) {
-    const restaurantTables = allTables.find(t => t.restaurantId === restaurantId)?.tables || [];
-    await createSampleOrders(restaurantId, restaurantTables, items);
-  }
-
-  console.log('🎉 Seed completed successfully!');
-  console.log('\n📋 Test Credentials:');
-  console.log('-------------------');
+  console.log('\n🎉 Seed completed successfully!');
+  console.log('\n📋 Credenciais de Teste:');
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('Super Admin: admin@qrmenu.com / Admin@123');
-  console.log('\nCasa do Sabor Admin: joao@casadosabor.com / Admin@123');
-  console.log('\nOther Restaurant Admins (all use password Admin@123):');
+  console.log('\nCasa do Sabor:');
+  console.log('  Admin:   joao@casadosabor.com / Admin@123');
+  console.log('  Gerente: ana@casadosabor.com / Admin@123');
+  console.log('  Cozinha: carlos@casadosabor.com / Admin@123');
+  console.log('  Garçom:  pedro@casadosabor.com / Admin@123');
+  console.log('  Caixa:   lucia@casadosabor.com / Admin@123');
+  console.log('\nPizzaria Bella:');
+  console.log('  Admin:   maria@pizzariabella.com / Admin@123');
+  console.log('  Cozinha: roberto@pizzariabella.com / Admin@123');
+  console.log('  Garçom:  fernanda@pizzariabella.com / Admin@123');
+  console.log('\nOutros restaurantes (admin@{slug}.com / Admin@123):');
   for (const r of restaurantsData) {
-    if (r.slug !== 'casa-do-sabor') {
-      console.log(`  - admin@${r.slug}.com`);
+    if (!specialUsers[r.slug]) {
+      console.log(`  - ${r.name}: admin@${r.slug}.com`);
     }
   }
-  console.log('\n📌 Test Scenarios:');
-  console.log('-------------------');
-  console.log('- Mesas 1-4: Ocupadas com pedidos em diferentes estados (para testar fluxo de cozinha/caixa)');
-  console.log('- Mesa 5: Com TODOS os pedidos PRONTOS (pronta para confirmar pagamento)');
-  console.log('- Mesas 6+: Disponíveis (ACTIVE) para novos clientes');
+  console.log('\n📌 Estado inicial:');
+  console.log('  - Todas as mesas: ACTIVE (prontas para receber clientes)');
+  console.log('  - Cozinha: Vazia (sem pedidos)');
+  console.log('  - Caixa: Vazio (sem contas)');
+  console.log('  - Relatórios: Sem dados históricos');
 }
 
 async function cleanDatabase() {
@@ -709,302 +734,6 @@ async function createSuperAdmin() {
       isSuperAdmin: true,
     },
   });
-}
-
-async function createSampleOrders(
-  restaurantId: string,
-  tables: any[],
-  menuItems: any[]
-) {
-  if (tables.length < 5 || menuItems.length < 5) return;
-
-  const expiresAt = new Date(Date.now() + 4 * 60 * 60 * 1000);
-  
-  // ============================================
-  // PART 1: Historical orders (for reports with variations)
-  // Create orders distributed over the last 14 days
-  // ============================================
-  await createHistoricalOrders(restaurantId, tables, menuItems);
-  
-  // ============================================
-  // PART 2: Current active orders (for testing Kitchen/Cashier workflow)
-  // ============================================
-  
-  // NEW WORKFLOW: PENDING -> CONFIRMED -> PREPARING -> READY (no more DELIVERED)
-  // Status distribution for testable scenarios
-  const testScenarios = [
-    // Mesa 1: Mix of statuses - some pending, some preparing
-    { tableIndex: 0, orders: [
-      { status: OrderStatus.PENDING, itemStatus: OrderItemStatus.PENDING },
-      { status: OrderStatus.PREPARING, itemStatus: OrderItemStatus.PREPARING },
-    ]},
-    // Mesa 2: All preparing
-    { tableIndex: 1, orders: [
-      { status: OrderStatus.PREPARING, itemStatus: OrderItemStatus.PREPARING },
-      { status: OrderStatus.PREPARING, itemStatus: OrderItemStatus.PREPARING },
-    ]},
-    // Mesa 3: Mix - some preparing, some ready
-    { tableIndex: 2, orders: [
-      { status: OrderStatus.PREPARING, itemStatus: OrderItemStatus.PREPARING },
-      { status: OrderStatus.READY, itemStatus: OrderItemStatus.READY },
-    ]},
-    // Mesa 4: Some ready, one pending (can't pay yet)
-    { tableIndex: 3, orders: [
-      { status: OrderStatus.READY, itemStatus: OrderItemStatus.READY },
-      { status: OrderStatus.PENDING, itemStatus: OrderItemStatus.PENDING },
-      { status: OrderStatus.READY, itemStatus: OrderItemStatus.READY },
-    ]},
-    // Mesa 5: ALL READY - can be used to test payment confirmation
-    { tableIndex: 4, orders: [
-      { status: OrderStatus.READY, itemStatus: OrderItemStatus.READY },
-      { status: OrderStatus.READY, itemStatus: OrderItemStatus.READY },
-      { status: OrderStatus.READY, itemStatus: OrderItemStatus.READY },
-    ]},
-  ];
-
-  let orderNumber = 100; // Start at 100 to differentiate from historical
-
-  for (const scenario of testScenarios) {
-    if (scenario.tableIndex >= tables.length) continue;
-    
-    const table = tables[scenario.tableIndex];
-    
-    // Create session for this table
-    const session = await prisma.tableSession.create({
-      data: {
-        table: { connect: { id: table.id } },
-        customerName: `Cliente Mesa ${table.number}`,
-        customerPhone: `11${Math.floor(900000000 + Math.random() * 99999999)}`,
-        deviceFingerprint: `device-${Date.now()}-${Math.random()}`,
-        ipAddress: `192.168.1.${Math.floor(Math.random() * 255)}`,
-        userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X)',
-        isVerified: true,
-        verifiedAt: new Date(),
-        expiresAt,
-      },
-    });
-
-    // Update table status to OCCUPIED
-    await prisma.table.update({
-      where: { id: table.id },
-      data: { status: TableStatus.OCCUPIED },
-    });
-
-    // Create orders for this table according to scenario
-    for (const orderConfig of scenario.orders) {
-      // Select 2-4 random items for order
-      const numItems = 2 + Math.floor(Math.random() * 3);
-      const selectedItems = [];
-      const usedIndices = new Set<number>();
-
-      while (selectedItems.length < numItems && usedIndices.size < menuItems.length) {
-        const randomIndex = Math.floor(Math.random() * menuItems.length);
-        if (!usedIndices.has(randomIndex)) {
-          usedIndices.add(randomIndex);
-          selectedItems.push(menuItems[randomIndex]);
-        }
-      }
-
-      // Calculate totals
-      let subtotal = 0;
-      const orderItems = selectedItems.map(item => {
-        const qty = 1 + Math.floor(Math.random() * 2);
-        const price = Number(item.price) * qty;
-        subtotal += price;
-        return {
-          menuItemId: item.id,
-          name: item.name,
-          quantity: qty,
-          price: Number(item.price) * qty,
-          status: orderConfig.itemStatus,
-          notes: Math.random() > 0.8 ? 'Sem cebola, por favor' : null,
-        };
-      });
-
-      // Create timestamps based on status
-      const now = new Date();
-      const createdAt = new Date(now.getTime() - Math.floor(Math.random() * 60) * 60000); // Up to 1 hour ago
-      const timestamps = getStatusTimestamps(orderConfig.status, createdAt);
-
-      await prisma.order.create({
-        data: {
-          orderNumber: orderNumber++,
-          restaurantId,
-          tableId: table.id,
-          sessionId: session.id,
-          status: orderConfig.status,
-          subtotal,
-          discount: 0,
-          total: subtotal,
-          createdAt,
-          updatedAt: now,
-          ...timestamps,
-          items: {
-            create: orderItems,
-          },
-        },
-      });
-    }
-  }
-
-  console.log(`   Created active orders for restaurant (test scenarios)`);
-}
-
-/**
- * Generate timestamps based on order status
- */
-function getStatusTimestamps(status: OrderStatus, createdAt: Date) {
-  const timestamps: Record<string, Date> = {};
-  const now = new Date();
-  
-  // Average time between statuses (in minutes)
-  const confirmTime = 2; // 2 min to confirm
-  const prepStartTime = 5; // 5 min to start preparing
-  const prepReadyTime = 15; // 15 min average prep time
-  
-  if (status === OrderStatus.CONFIRMED || status === OrderStatus.PREPARING || status === OrderStatus.READY || status === OrderStatus.PAID) {
-    const confirmedAt = new Date(createdAt.getTime() + confirmTime * 60000);
-    timestamps.confirmedAt = confirmedAt;
-    
-    if (status === OrderStatus.PREPARING || status === OrderStatus.READY || status === OrderStatus.PAID) {
-      const preparingAt = new Date(confirmedAt.getTime() + prepStartTime * 60000);
-      timestamps.preparingAt = preparingAt;
-      
-      if (status === OrderStatus.READY || status === OrderStatus.PAID) {
-        // Prep time varies between 10-25 minutes
-        const actualPrepTime = 10 + Math.floor(Math.random() * 15);
-        const readyAt = new Date(preparingAt.getTime() + actualPrepTime * 60000);
-        timestamps.readyAt = readyAt.getTime() < now.getTime() ? readyAt : now;
-        
-        if (status === OrderStatus.PAID) {
-          // Paid ~5-15 min after ready
-          const payTime = 5 + Math.floor(Math.random() * 10);
-          const paidAt = new Date((timestamps.readyAt as Date).getTime() + payTime * 60000);
-          timestamps.paidAt = paidAt.getTime() < now.getTime() ? paidAt : now;
-        }
-      }
-    }
-  }
-  
-  if (status === OrderStatus.CANCELLED) {
-    // Cancelled ~5-10 min after creation
-    const cancelTime = 5 + Math.floor(Math.random() * 5);
-    timestamps.cancelledAt = new Date(createdAt.getTime() + cancelTime * 60000);
-  }
-  
-  return timestamps;
-}
-
-/**
- * Create historical orders for reports (distributed over 14 days)
- */
-async function createHistoricalOrders(
-  restaurantId: string,
-  tables: any[],
-  menuItems: any[]
-) {
-  const now = new Date();
-  let historicalOrderNumber = 1;
-  
-  // Create orders for the last 14 days (more orders in recent days, weekends busier)
-  for (let daysAgo = 13; daysAgo >= 0; daysAgo--) {
-    const orderDate = new Date(now);
-    orderDate.setDate(orderDate.getDate() - daysAgo);
-    orderDate.setHours(0, 0, 0, 0);
-    
-    const dayOfWeek = orderDate.getDay(); // 0 = Sunday
-    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
-    
-    // More orders on weekends, more recent days have more orders
-    const baseOrders = isWeekend ? 8 : 5;
-    const recencyBonus = Math.floor((14 - daysAgo) / 3); // More orders in recent days
-    const numOrdersForDay = baseOrders + recencyBonus + Math.floor(Math.random() * 4);
-    
-    // Skip creating orders for some days randomly (to show 0 days in reports)
-    if (daysAgo > 7 && Math.random() < 0.2) continue;
-    
-    for (let i = 0; i < numOrdersForDay; i++) {
-      // Random time during operating hours (11:00 - 22:00)
-      const hour = 11 + Math.floor(Math.random() * 11);
-      const minute = Math.floor(Math.random() * 60);
-      const createdAt = new Date(orderDate);
-      createdAt.setHours(hour, minute, 0, 0);
-      
-      // Select random table (any table, not just the first 5)
-      const table = tables[Math.floor(Math.random() * tables.length)];
-      
-      // Create a temporary session for historical order
-      const session = await prisma.tableSession.create({
-        data: {
-          table: { connect: { id: table.id } },
-          customerName: `Cliente Histórico ${historicalOrderNumber}`,
-          customerPhone: `11${Math.floor(900000000 + Math.random() * 99999999)}`,
-          deviceFingerprint: `device-hist-${Date.now()}-${Math.random()}`,
-          ipAddress: `192.168.1.${Math.floor(Math.random() * 255)}`,
-          userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X)',
-          isVerified: true,
-          verifiedAt: createdAt,
-          expiresAt: new Date(createdAt.getTime() + 4 * 60 * 60 * 1000),
-          isActive: false, // Historical sessions are inactive
-        },
-      });
-      
-      // Select 2-5 random items for order
-      const numItems = 2 + Math.floor(Math.random() * 4);
-      const selectedItems = [];
-      const usedIndices = new Set<number>();
-
-      while (selectedItems.length < numItems && usedIndices.size < menuItems.length) {
-        const randomIndex = Math.floor(Math.random() * menuItems.length);
-        if (!usedIndices.has(randomIndex)) {
-          usedIndices.add(randomIndex);
-          selectedItems.push(menuItems[randomIndex]);
-        }
-      }
-
-      // Calculate totals
-      let subtotal = 0;
-      const orderItems = selectedItems.map(item => {
-        const qty = 1 + Math.floor(Math.random() * 2);
-        const price = Number(item.price) * qty;
-        subtotal += price;
-        return {
-          menuItemId: item.id,
-          name: item.name,
-          quantity: qty,
-          price: Number(item.price) * qty,
-          status: OrderItemStatus.READY, // Historical orders are complete
-          notes: null,
-        };
-      });
-
-      // Historical orders are either PAID or CANCELLED (mostly PAID)
-      const isCancelled = Math.random() < 0.05; // 5% cancellation rate
-      const status = isCancelled ? OrderStatus.CANCELLED : OrderStatus.PAID;
-      const timestamps = getStatusTimestamps(status, createdAt);
-
-      await prisma.order.create({
-        data: {
-          orderNumber: historicalOrderNumber++,
-          restaurantId,
-          tableId: table.id,
-          sessionId: session.id,
-          status,
-          subtotal,
-          discount: 0,
-          total: subtotal,
-          createdAt,
-          updatedAt: timestamps.paidAt || timestamps.cancelledAt || createdAt,
-          ...timestamps,
-          items: {
-            create: orderItems,
-          },
-        },
-      });
-    }
-  }
-  
-  console.log(`   Created ${historicalOrderNumber - 1} historical orders (14 days)`);
 }
 
 main()

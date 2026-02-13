@@ -5,7 +5,6 @@ import {
   DollarSign, 
   Users, 
   ChefHat,
-  TrendingUp,
   Clock,
   ChevronDown,
   Package,
@@ -223,28 +222,24 @@ export default function DashboardPage() {
     {
       title: 'Pedidos Hoje',
       value: stats?.totalOrders || 0,
-      change: '+12%',
       icon: ShoppingBag,
       color: 'bg-blue-500',
     },
     {
       title: 'Receita do Dia',
       value: formatCurrency(stats?.revenue || 0),
-      change: '+8%',
       icon: DollarSign,
       color: 'bg-green-500',
     },
     {
       title: 'Mesas Ocupadas',
       value: `${tableStats?.occupied || 0}/${tableStats?.total || 0}`,
-      change: '',
       icon: Users,
       color: 'bg-primary-500',
     },
     {
       title: 'Em Preparo',
       value: stats?.preparingOrders || 0,
-      change: '',
       icon: ChefHat,
       color: 'bg-purple-500',
     },
@@ -280,12 +275,6 @@ export default function DashboardPage() {
                     stat.value
                   )}
                 </p>
-                {stat.change && (
-                  <div className="flex items-center gap-1 mt-2 text-green-600 text-sm">
-                    <TrendingUp className="w-4 h-4" />
-                    <span>{stat.change}</span>
-                  </div>
-                )}
               </div>
               <div className={`p-3 rounded-xl ${stat.color}`}>
                 <stat.icon className="w-6 h-6 text-white" />
