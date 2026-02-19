@@ -225,9 +225,10 @@ export default function CartDrawer({ isOpen, onClose, restaurantSlug }: Props) {
                       {/* Clear cart */}
                       <button
                         onClick={clearCart}
-                        className="text-sm text-error-500 hover:underline"
+                        className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg border border-red-200 bg-red-50 text-red-600 text-sm font-medium hover:bg-red-100 hover:border-red-300 transition-colors"
                       >
-                        Limpar carrinho
+                        <Trash2 className="w-4 h-4" />
+                        Limpar Carrinho
                       </button>
                     </div>
                   )}

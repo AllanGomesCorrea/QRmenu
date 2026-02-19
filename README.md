@@ -241,7 +241,44 @@ qrmenu/
 
 ---
 
-## 🧪 Testando a Aplicação
+## 🧪 Testes Automatizados
+
+O projeto possui testes automatizados para **backend**, **admin** e **web**. Execute:
+
+```bash
+# Rodar TODOS os testes (backend + web + admin)
+npm test
+
+# Rodar apenas backend
+npm run test:backend
+
+# Rodar apenas web (cliente)
+npm run test:web
+
+# Rodar apenas admin (painel)
+npm run test:admin
+
+# Rodar testes com cobertura
+npm run test:coverage
+```
+
+### Resumo dos testes
+
+| Projeto | Framework | Testes | Tipo |
+|---------|-----------|--------|------|
+| **Backend** | Jest + ts-jest | ~97 | Unit (services) + E2E |
+| **Admin** | Vitest + Testing Library | ~44 | Unit (stores, config, utils) |
+| **Web** | Vitest + Testing Library | ~30 | Unit (stores, utils) |
+
+### O que é testado
+
+- **Backend:** AuthService, OrdersService, SessionsService, TablesService, UsersService, RestaurantsService, calculateDistance, isRestaurantOpen, validação de status transitions
+- **Admin:** authStore (login/logout, Super Admin selectedRestaurant, getEffectiveRestaurant), notificationStore (add/read/remove), permissions (RBAC), formatters
+- **Web:** sessionStore (session lifecycle, isSessionValid), cartStore (add/remove/clear, subtotal, cross-restaurant cart), formatters
+
+---
+
+## 🧪 Testando a Aplicação (Manual)
 
 ### 1. Testar como Admin
 

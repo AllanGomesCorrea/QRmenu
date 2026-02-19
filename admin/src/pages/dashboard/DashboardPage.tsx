@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ShoppingBag, 
@@ -7,12 +7,17 @@ import {
   ChefHat,
   Clock,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Package,
   AlertCircle,
   Loader2,
+  RefreshCw,
 } from 'lucide-react';
 import { useOrders, useTodayStats, Order } from '@/hooks/useOrders';
 import { useTableStats } from '@/hooks/useTables';
+
+const AUTO_REFRESH_INTERVAL = 30000; // 30 seconds
 
 const statusColors: Record<string, string> = {
   'PENDING': 'bg-blue-100 text-blue-800',
@@ -207,12 +212,34 @@ function ExpandableOrderRow({ order, isExpanded, onToggle }: ExpandableOrderRowP
   );
 }
 
+const PAGE_SIZE_OPTIONS = [10, 50, 100];
+
 export default function DashboardPage() {
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
+  const [pageSize, setPageSize] = useState(10);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   
-  const { data: ordersData, isLoading: loadingOrders } = useOrders({ limit: 10 });
-  const { data: stats, isLoading: loadingStats } = useTodayStats();
-  const { data: tableStats } = useTableStats();
+  const { data: ordersData, isLoading: loadingOrders, refetch: refetchOrders } = useOrders({
+    limit: pageSize,
+    offset: currentPage * pageSize,
+  });
+  const { data: stats, isLoading: loadingStats, refetch: refetchStats } = useTodayStats();
+  const { data: tableStats, refetch: refetchTables } = useTableStats();
+
+  const totalOrders = ordersData?.total || 0;
+  const totalPages = Math.ceil(totalOrders / pageSize);
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    await Promise.all([refetchOrders(), refetchStats(), refetchTables()]);
+    setIsRefreshing(false);
+  }, [refetchOrders, refetchStats, refetchTables]);
+
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize);
+    setCurrentPage(0); // Reset to first page
+  };
 
   const toggleOrder = (orderId: string) => {
     setExpandedOrder(expandedOrder === orderId ? null : orderId);
@@ -248,11 +275,22 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-heading font-bold text-gray-900">
-          Dashboard
-        </h1>
-        <p className="text-gray-600">Visão geral do seu restaurante</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-heading font-bold text-gray-900">
+            Dashboard
+          </h1>
+          <p className="text-gray-600">Visão geral do seu restaurante</p>
+        </div>
+        <button
+          onClick={handleRefresh}
+          disabled={isRefreshing}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
+          title="Atualizar dados"
+        >
+          <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+          <span className="text-sm font-medium">Atualizar</span>
+        </button>
       </div>
 
       {/* Stats Grid */}
@@ -300,9 +338,22 @@ export default function DashboardPage() {
               Clique em um pedido para ver os itens
             </p>
           </div>
-          <button className="text-primary-600 text-sm hover:underline">
-            Ver todos
-          </button>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-500">Exibir:</span>
+            {PAGE_SIZE_OPTIONS.map((size) => (
+              <button
+                key={size}
+                onClick={() => handlePageSizeChange(size)}
+                className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
+                  pageSize === size
+                    ? 'bg-primary-500 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {size}
+              </button>
+            ))}
+          </div>
         </div>
 
         {loadingOrders ? (
@@ -310,42 +361,72 @@ export default function DashboardPage() {
             <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
           </div>
         ) : ordersData?.orders && ordersData.orders.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-100">
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
-                    Pedido
-                  </th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
-                    Mesa
-                  </th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
-                    Itens
-                  </th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
-                    Status
-                  </th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
-                    Tempo
-                  </th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
-                    Total
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {ordersData.orders.map((order) => (
-                  <ExpandableOrderRow
-                    key={order.id}
-                    order={order}
-                    isExpanded={expandedOrder === order.id}
-                    onToggle={() => toggleOrder(order.id)}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-gray-100">
+                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
+                      Pedido
+                    </th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
+                      Mesa
+                    </th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
+                      Itens
+                    </th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
+                      Status
+                    </th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
+                      Tempo
+                    </th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">
+                      Total
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ordersData.orders.map((order) => (
+                    <ExpandableOrderRow
+                      key={order.id}
+                      order={order}
+                      isExpanded={expandedOrder === order.id}
+                      onToggle={() => toggleOrder(order.id)}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
+                <p className="text-sm text-gray-500">
+                  Mostrando {currentPage * pageSize + 1}–{Math.min((currentPage + 1) * pageSize, totalOrders)} de {totalOrders} pedidos
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
+                    disabled={currentPage === 0}
+                    className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <span className="text-sm font-medium text-gray-700 px-2">
+                    {currentPage + 1} / {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages - 1, p + 1))}
+                    disabled={currentPage >= totalPages - 1}
+                    className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         ) : (
           <div className="text-center py-12">
             <ShoppingBag className="w-12 h-12 text-gray-300 mx-auto mb-3" />

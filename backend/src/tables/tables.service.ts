@@ -309,7 +309,20 @@ export class TablesService {
       data: { isActive: false },
     });
 
-    // Notify clients that their session was closed
+    // Notify ALL clients on this table that session was closed
+    // Using table room ensures every customer on the table gets the notification
+    this.websocketGateway.server
+      .to(`table:${id}`)
+      .emit('session:closed', {
+        tableId: id,
+        tableNumber: table.number,
+        tableName: table.name,
+        reason: 'payment_completed',
+        message: 'Conta paga! Obrigado pela visita.',
+        timestamp: new Date().toISOString(),
+      });
+    
+    // Also emit to individual session rooms as fallback
     for (const session of activeSessions) {
       this.websocketGateway.server
         .to(`session:${session.id}`)

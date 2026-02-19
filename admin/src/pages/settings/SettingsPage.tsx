@@ -4,7 +4,6 @@ import {
   Store, 
   Clock, 
   Bell,
-  Palette,
   Globe,
   Shield,
   Save,
@@ -17,7 +16,6 @@ const tabs = [
   { id: 'general', label: 'Geral', icon: Store },
   { id: 'hours', label: 'Horários', icon: Clock },
   { id: 'notifications', label: 'Notificações', icon: Bell },
-  { id: 'appearance', label: 'Aparência', icon: Palette },
 ];
 
 export default function SettingsPage() {
@@ -268,45 +266,6 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {activeTab === 'appearance' && (
-            <div className="card">
-              <h2 className="font-heading text-lg font-semibold text-gray-900 mb-6">
-                Aparência do Cardápio
-              </h2>
-              <div className="space-y-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Cor Principal
-                  </label>
-                  <div className="flex gap-3">
-                    {['#f59e0b', '#ef4444', '#22c55e', '#3b82f6', '#8b5cf6', '#ec4899'].map((color) => (
-                      <button
-                        key={color}
-                        className="w-10 h-10 rounded-lg border-2 border-transparent hover:border-gray-300 transition-colors"
-                        style={{ backgroundColor: color }}
-                        disabled={!canManage('settings')}
-                      />
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Banner do Cardápio
-                  </label>
-                  <div className="border-2 border-dashed border-gray-200 rounded-xl p-8 text-center">
-                    <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                    <p className="text-sm text-gray-500">
-                      Arraste uma imagem ou clique para enviar
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      Recomendado: 1200x400px
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>

@@ -186,8 +186,9 @@ export class OrdersService {
   }
 
   /**
-   * Get all orders for the table (not just this session)
+   * Get all orders for the table from ACTIVE sessions only
    * Returns orders with session info to identify who ordered what
+   * Excludes orders from previous (closed) sessions to avoid accumulation
    */
   async getTableOrdersForSession(sessionId: string) {
     // First, get the session to find the tableId
@@ -200,13 +201,16 @@ export class OrdersService {
       return [];
     }
 
-    // Get ALL orders from this table (from all active sessions)
+    // Get only orders from ACTIVE sessions on this table
+    // This prevents showing orders from previous (closed) sessions
     const orders = await this.prisma.order.findMany({
       where: { 
         tableId: session.tableId,
-        // Only show orders from active sessions or recent orders
         status: {
           notIn: [OrderStatus.CANCELLED],
+        },
+        session: {
+          isActive: true,
         },
       },
       include: {
@@ -231,6 +235,8 @@ export class OrdersService {
 
   /**
    * Get all orders for restaurant (admin)
+   * When activeSessionsOnly is true, only returns orders from currently active sessions
+   * (used by Cashier to avoid showing old paid orders from previous table sessions)
    */
   async getRestaurantOrders(
     restaurantId: string,
@@ -241,6 +247,7 @@ export class OrdersService {
       tableId?: string;
       limit?: number;
       offset?: number;
+      activeSessionsOnly?: boolean;
     },
   ) {
     const where: any = { restaurantId };
@@ -263,13 +270,19 @@ export class OrdersService {
       }
     }
 
+    // Filter to only include orders from active sessions
+    // This prevents accumulation of old orders when tables are reused
+    if (options?.activeSessionsOnly) {
+      where.session = { isActive: true };
+    }
+
     const [orders, total] = await Promise.all([
       this.prisma.order.findMany({
         where,
         include: {
           items: true,
           table: { select: { id: true, number: true, name: true } },
-          session: { select: { customerName: true, customerPhone: true } },
+          session: { select: { customerName: true, customerPhone: true, isActive: true } },
         },
         orderBy: { createdAt: 'desc' },
         take: options?.limit || 50,

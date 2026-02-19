@@ -113,6 +113,7 @@ export class OrdersController {
   @ApiQuery({ name: 'endDate', required: false })
   @ApiQuery({ name: 'limit', required: false })
   @ApiQuery({ name: 'offset', required: false })
+  @ApiQuery({ name: 'activeSessionsOnly', required: false, type: Boolean, description: 'Only return orders from active sessions' })
   @ApiResponse({ status: 200, description: 'Lista de pedidos' })
   async getOrders(
     @CurrentRestaurant() restaurantId: string | null,
@@ -122,6 +123,7 @@ export class OrdersController {
     @Query('endDate') endDate?: string,
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
+    @Query('activeSessionsOnly') activeSessionsOnly?: string,
   ) {
     if (!restaurantId) {
       throw new ForbiddenException('Usuário não vinculado a um restaurante');
@@ -134,6 +136,7 @@ export class OrdersController {
       endDate: endDate ? new Date(endDate) : undefined,
       limit: limit ? parseInt(limit) : undefined,
       offset: offset ? parseInt(offset) : undefined,
+      activeSessionsOnly: activeSessionsOnly === 'true',
     });
   }
 

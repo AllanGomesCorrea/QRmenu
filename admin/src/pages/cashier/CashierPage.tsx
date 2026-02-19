@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Receipt, 
@@ -7,10 +7,13 @@ import {
   CheckCircle,
   Search,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Package,
   User,
   Phone,
   Loader2,
+  RefreshCw,
 } from 'lucide-react';
 import { usePermissions } from '@/hooks/usePermissions';
 import { useOrders, useTodayStats, Order } from '@/hooks/useOrders';
@@ -59,7 +62,7 @@ interface TableBill {
   itemCount: number;
   status: 'open' | 'ready' | 'paid';
   firstOrderTime: string;
-  paidAt?: string;  // Data do pagamento mais recente (para filtrar por hoje)
+  paidAt?: string;
 }
 
 // Helper para verificar se uma data é de hoje
@@ -193,7 +196,7 @@ function ExpandableBillRow({ bill, isExpanded, onToggle, canManage, onPayment, i
                     }
                     acc[customerKey].orders.push(order);
                     if (order.status !== 'CANCELLED') {
-                      acc[customerKey].total += order.total;
+                      acc[customerKey].total += typeof order.total === 'number' ? order.total : (parseFloat(String(order.total)) || 0);
                     }
                     return acc;
                   }, {} as Record<string, { customerName: string; customerPhone: string; orders: typeof displayOrders; total: number }>);
@@ -290,7 +293,7 @@ function ExpandableBillRow({ bill, isExpanded, onToggle, canManage, onPayment, i
                         {/* Order Total */}
                         <div className="mt-4 pt-3 border-t border-gray-200 flex justify-between items-center">
                           <span className="text-gray-600">Subtotal do pedido</span>
-                          <span className="font-bold text-gray-900">{formatCurrency(order.total)}</span>
+                          <span className="font-bold text-gray-900">{formatCurrency(typeof order.total === 'number' ? order.total : (parseFloat(String(order.total)) || 0))}</span>
                         </div>
                       </div>
                     </motion.div>
@@ -375,16 +378,27 @@ function ExpandableBillRow({ bill, isExpanded, onToggle, canManage, onPayment, i
   );
 }
 
+const PAGE_SIZE_OPTIONS = [10, 50, 100];
+
 export default function CashierPage() {
   const { canManage } = usePermissions();
   const [filter, setFilter] = useState<'all' | 'open' | 'ready' | 'paid'>('open');
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedBill, setExpandedBill] = useState<string | null>(null);
   const [processingTableId, setProcessingTableId] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [pageSize, setPageSize] = useState(10);
+  const [currentPage, setCurrentPage] = useState(0);
 
-  const { data: ordersData, isLoading: loadingOrders, refetch: refetchOrders } = useOrders({ limit: 100 });
+  const { data: ordersData, isLoading: loadingOrders, refetch: refetchOrders } = useOrders({ limit: 500, activeSessionsOnly: true });
   const { data: tables, refetch: refetchTables } = useTables();
   const { data: todayStats, refetch: refetchTodayStats } = useTodayStats();
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    await Promise.all([refetchOrders(), refetchTables(), refetchTodayStats()]);
+    setIsRefreshing(false);
+  }, [refetchOrders, refetchTables, refetchTodayStats]);
 
   // Group orders by table to create bills
   const tableBills = useMemo<TableBill[]>(() => {
@@ -410,8 +424,8 @@ export default function CashierPage() {
           tableNumber: order.table.number,
           tableName: order.table.name,
           orders: [order],
-          totalAmount: 0, // Será calculado depois
-          itemCount: 0,   // Será calculado depois
+          totalAmount: 0,
+          itemCount: 0,
           status: 'open',
           firstOrderTime: order.createdAt,
         });
@@ -443,8 +457,7 @@ export default function CashierPage() {
         return;
       }
       
-      // Para mesas NÃO pagas, somar apenas pedidos ATIVOS a pagar (READY, PENDING, PREPARING, CONFIRMED)
-      // Pedidos PAID são de sessões anteriores e CANCELLED não devem ser cobrados
+      // Para mesas NÃO pagas, somar apenas pedidos ATIVOS a pagar
       const activeOrders = bill.orders.filter(order => order.status !== 'PAID');
       const chargeableOrders = activeOrders.filter(order => order.status !== 'CANCELLED');
       
@@ -454,7 +467,7 @@ export default function CashierPage() {
         bill.itemCount += order.items?.length || 0;
       });
       
-      // Check if all ACTIVE orders are READY or CANCELLED - mark as ready for payment/release
+      // Check if all ACTIVE orders are READY or CANCELLED - mark as ready
       const allActiveOrdersReadyOrCancelled = activeOrders.length > 0 && activeOrders.every(
         order => order.status === 'READY' || order.status === 'CANCELLED'
       );
@@ -463,11 +476,9 @@ export default function CashierPage() {
       }
     });
 
-    // Filtrar mesas que não têm pedidos ativos (só tinham pedidos PAID antigos)
+    // Filtrar mesas que não têm pedidos ativos
     const filteredBills = Array.from(billsMap.values()).filter(bill => {
-      // Manter mesas pagas (todas PAID)
       if (bill.status === 'paid') return true;
-      // Manter mesas com pedidos ativos (mesmo que total seja 0 por serem todos cancelados)
       const activeOrders = bill.orders.filter(order => order.status !== 'PAID');
       return activeOrders.length > 0;
     });
@@ -479,12 +490,10 @@ export default function CashierPage() {
 
   const filteredBills = useMemo(() => {
     return tableBills.filter(bill => {
-      // Para filtro "paid", mostrar apenas mesas pagas HOJE
       let matchesFilter = false;
       if (filter === 'all') {
         matchesFilter = true;
       } else if (filter === 'paid') {
-        // Apenas mesas pagas hoje
         matchesFilter = bill.status === 'paid' && isToday(bill.paidAt);
       } else {
         matchesFilter = bill.status === filter;
@@ -497,31 +506,37 @@ export default function CashierPage() {
     });
   }, [tableBills, filter, searchTerm]);
 
+  // Paginated bills
+  const paginatedBills = useMemo(() => {
+    const start = currentPage * pageSize;
+    return filteredBills.slice(start, start + pageSize);
+  }, [filteredBills, currentPage, pageSize]);
+
+  const totalPages = Math.ceil(filteredBills.length / pageSize);
+
   const stats = useMemo(() => ({
     unpaidCount: tableBills.filter(b => b.status === 'open' || b.status === 'ready').length,
     totalUnpaid: tableBills.filter(b => b.status === 'open' || b.status === 'ready').reduce((acc, b) => acc + b.totalAmount, 0),
-    // Usar todayStats.revenue do backend para garantir consistência com Dashboard e Relatórios
     paidToday: todayStats?.revenue || 0,
   }), [tableBills, todayStats]);
 
   const handlePayment = async (tableId: string) => {
     setProcessingTableId(tableId);
     try {
-      // Call API to release table (marks orders as PAID, ends session, sets status to ACTIVE)
       await api.post(`/tables/${tableId}/release`);
-      
-      // Close expanded view
       setExpandedBill(null);
-      
-      // Refetch data
       await Promise.all([refetchOrders(), refetchTables(), refetchTodayStats()]);
-      
     } catch (error: any) {
       console.error('Error processing payment:', error);
       alert(error.response?.data?.message || 'Erro ao processar pagamento');
     } finally {
       setProcessingTableId(null);
     }
+  };
+
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize);
+    setCurrentPage(0);
   };
 
   return (
@@ -534,6 +549,15 @@ export default function CashierPage() {
           </h1>
           <p className="text-gray-600">Gerenciamento de contas e pagamentos</p>
         </div>
+        <button
+          onClick={handleRefresh}
+          disabled={isRefreshing}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50"
+          title="Atualizar dados"
+        >
+          <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+          <span className="text-sm font-medium">Atualizar</span>
+        </button>
       </div>
 
       {/* Stats */}
@@ -606,7 +630,7 @@ export default function CashierPage() {
             type="text"
             placeholder="Buscar por número da mesa..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(0); }}
             className="input pl-10 w-full"
           />
         </div>
@@ -619,7 +643,7 @@ export default function CashierPage() {
           ].map((f) => (
             <button
               key={f.id}
-              onClick={() => setFilter(f.id as any)}
+              onClick={() => { setFilter(f.id as any); setCurrentPage(0); }}
               className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                 filter === f.id 
                   ? `bg-${f.color} text-white` 
@@ -648,48 +672,93 @@ export default function CashierPage() {
           <p className="text-sm text-gray-500">
             Clique em uma conta para ver os detalhes e processar pagamento
           </p>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-500">Exibir:</span>
+            {PAGE_SIZE_OPTIONS.map((size) => (
+              <button
+                key={size}
+                onClick={() => handlePageSizeChange(size)}
+                className={`px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
+                  pageSize === size
+                    ? 'bg-primary-500 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {size}
+              </button>
+            ))}
+          </div>
         </div>
 
         {loadingOrders ? (
           <div className="flex items-center justify-center py-12">
             <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
           </div>
-        ) : filteredBills.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-100">
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Mesa</th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Pedidos</th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Itens</th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Total</th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Status</th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Abertura</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredBills.map((bill) => {
-                  // Check if all ACTIVE orders (non-PAID) are READY or CANCELLED
-                  const activeOrders = bill.orders.filter(o => o.status !== 'PAID');
-                  const canConfirmPayment = activeOrders.length > 0 && activeOrders.every(
-                    order => order.status === 'READY' || order.status === 'CANCELLED'
-                  );
-                  return (
-                    <ExpandableBillRow
-                      key={bill.tableId}
-                      bill={bill}
-                      isExpanded={expandedBill === bill.tableId}
-                      onToggle={() => setExpandedBill(expandedBill === bill.tableId ? null : bill.tableId)}
-                      canManage={canManage('cashier')}
-                      onPayment={handlePayment}
-                      isProcessing={processingTableId === bill.tableId}
-                      canConfirmPayment={canConfirmPayment}
-                    />
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+        ) : paginatedBills.length > 0 ? (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-gray-100">
+                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Mesa</th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Pedidos</th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Itens</th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Total</th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Status</th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-gray-600">Abertura</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedBills.map((bill) => {
+                    const activeOrders = bill.orders.filter(o => o.status !== 'PAID');
+                    const canConfirmPayment = activeOrders.length > 0 && activeOrders.every(
+                      order => order.status === 'READY' || order.status === 'CANCELLED'
+                    );
+                    return (
+                      <ExpandableBillRow
+                        key={bill.tableId}
+                        bill={bill}
+                        isExpanded={expandedBill === bill.tableId}
+                        onToggle={() => setExpandedBill(expandedBill === bill.tableId ? null : bill.tableId)}
+                        canManage={canManage('cashier')}
+                        onPayment={handlePayment}
+                        isProcessing={processingTableId === bill.tableId}
+                        canConfirmPayment={canConfirmPayment}
+                      />
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-100">
+                <p className="text-sm text-gray-500">
+                  Mostrando {currentPage * pageSize + 1}–{Math.min((currentPage + 1) * pageSize, filteredBills.length)} de {filteredBills.length} contas
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
+                    disabled={currentPage === 0}
+                    className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <span className="text-sm font-medium text-gray-700 px-2">
+                    {currentPage + 1} / {totalPages}
+                  </span>
+                  <button
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages - 1, p + 1))}
+                    disabled={currentPage >= totalPages - 1}
+                    className="p-2 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         ) : (
           <div className="text-center py-12">
             <Receipt className="w-12 h-12 text-gray-300 mx-auto mb-3" />

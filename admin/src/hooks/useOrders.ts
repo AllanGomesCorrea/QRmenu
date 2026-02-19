@@ -70,6 +70,7 @@ export function useOrders(params?: {
   endDate?: string;
   limit?: number;
   offset?: number;
+  activeSessionsOnly?: boolean;
 }) {
   return useQuery<{ orders: Order[]; total: number }>({
     queryKey: ['orders', params],

@@ -6,10 +6,10 @@
   "scripts": {
     "dev:all": "npm run dev:infra && npm run dev:services",
     "dev:services": "concurrently -n \"backend,web,admin\" -c \"blue,green,yellow\" \"npm run dev:backend\" \"npm run dev:web\" \"npm run dev:admin\"",
-    "dev:infra": "docker compose up -d postgres redis",
-    "dev:infra:stop": "docker compose stop postgres redis",
-    "dev:infra:down": "docker compose down",
-    "dev:infra:reset": "docker compose down -v",
+    "dev:infra": "docker-compose up -d postgres redis",
+    "dev:infra:stop": "docker-compose stop postgres redis",
+    "dev:infra:down": "docker-compose down",
+    "dev:infra:reset": "docker-compose down -v",
     "dev:backend": "cd backend && npm run start:dev",
     "dev:web": "cd web && npm run dev",
     "dev:admin": "cd admin && npm run dev",
@@ -25,7 +25,12 @@
     "db:studio": "cd backend && npx prisma studio",
     "db:reset": "cd backend && npx prisma migrate reset --force",
     "setup": "npm run setup:env && npm run install:all && npm run dev:infra && node -e \"setTimeout(()=>{},5000)\" && npm run db:generate && npm run db:migrate && npm run db:seed",
-    "start": "npm run dev:all"
+    "start": "npm run dev:all",
+    "test": "npm run test:backend && npm run test:web && npm run test:admin",
+    "test:backend": "cd backend && npm test",
+    "test:web": "cd web && npm test",
+    "test:admin": "cd admin && npm test",
+    "test:coverage": "cd backend && npm run test:cov && cd ../web && npm run test:coverage && cd ../admin && npm run test:coverage"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
