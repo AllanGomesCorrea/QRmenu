@@ -13,6 +13,8 @@ import {
   MoreVertical,
   RefreshCw,
   Receipt,
+  AlertTriangle,
+  Unlock,
 } from 'lucide-react';
 import {
   useTables,
@@ -22,10 +24,13 @@ import {
   useDeleteTable,
   useActivateTable,
   useCloseTable,
+  useForceReleaseTable,
+  useReleaseTable,
   useGetQRCode,
   Table,
 } from '@/hooks/useTables';
 import { usePermissions } from '@/hooks/usePermissions';
+import { useAuthStore } from '@/stores/authStore';
 import TableModal from './TableModal';
 import QRCodeModal from './QRCodeModal';
 
@@ -58,11 +63,17 @@ export default function TablesPage() {
   
   const canManageTables = canManage('tables');
   
+  const userRole = useAuthStore((s) => s.user?.role);
+  const isSuperAdmin = useAuthStore((s) => s.user?.isSuperAdmin);
+  const isAdminRole = userRole === 'ADMIN' || isSuperAdmin;
+
   const createTable = useCreateTable();
   const createBulk = useCreateBulkTables();
   const deleteTable = useDeleteTable();
   const activateTable = useActivateTable();
   const closeTable = useCloseTable();
+  const releaseTable = useReleaseTable();
+  const forceReleaseTable = useForceReleaseTable();
   const getQRCode = useGetQRCode();
 
   // Group tables by section
@@ -97,6 +108,26 @@ export default function TablesPage() {
 
   const handleClose = async (table: Table) => {
     await closeTable.mutateAsync(table.id);
+    setMenuOpen(null);
+  };
+
+  const handleRelease = async (table: Table) => {
+    try {
+      await releaseTable.mutateAsync(table.id);
+    } catch {
+      // error handled by mutation
+    }
+    setMenuOpen(null);
+  };
+
+  const handleForceRelease = async (table: Table) => {
+    if (confirm(`⚠️ Forçar liberação da Mesa ${table.number}?\n\nIsso irá:\n• Cancelar TODOS os pedidos pendentes\n• Encerrar todas as sessões\n• Liberar a mesa\n\nEssa ação não pode ser desfeita.`)) {
+      try {
+        await forceReleaseTable.mutateAsync(table.id);
+      } catch {
+        // error handled by mutation
+      }
+    }
     setMenuOpen(null);
   };
 
@@ -268,6 +299,24 @@ export default function TablesPage() {
                                 >
                                   <Edit className="w-4 h-4" />
                                   Editar
+                                </button>
+                              )}
+                              {(table.status === 'OCCUPIED' || table.status === 'BILL_REQUESTED') && (
+                                <button
+                                  onClick={() => handleRelease(table)}
+                                  className="w-full px-4 py-2 text-sm text-left hover:bg-gray-50 flex items-center gap-2 text-blue-600"
+                                >
+                                  <Unlock className="w-4 h-4" />
+                                  Liberar mesa
+                                </button>
+                              )}
+                              {isAdminRole && (table.status === 'OCCUPIED' || table.status === 'BILL_REQUESTED') && (
+                                <button
+                                  onClick={() => handleForceRelease(table)}
+                                  className="w-full px-4 py-2 text-sm text-left hover:bg-gray-50 flex items-center gap-2 text-red-600"
+                                >
+                                  <AlertTriangle className="w-4 h-4" />
+                                  Forçar liberação
                                 </button>
                               )}
                               {canManageTables && table.status !== 'OCCUPIED' && table.status !== 'BILL_REQUESTED' && (

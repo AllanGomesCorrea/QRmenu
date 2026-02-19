@@ -1,16 +1,16 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
-  Settings, 
   Store, 
   Clock, 
   Bell,
-  Globe,
-  Shield,
   Save,
   Upload,
+  Loader2,
+  RefreshCw,
+  AlertTriangle,
 } from 'lucide-react';
-import { useAuthStore } from '../../stores/authStore';
 import { usePermissions } from '../../hooks/usePermissions';
+import { useMyRestaurant, useUpdateRestaurant } from '../../hooks/useRestaurant';
 
 const tabs = [
   { id: 'general', label: 'Geral', icon: Store },
@@ -19,17 +19,80 @@ const tabs = [
 ];
 
 export default function SettingsPage() {
-  const restaurant = useAuthStore((state) => state.restaurant);
   const { canManage } = usePermissions();
+  const { data: restaurant, isLoading, isError, refetch } = useMyRestaurant();
+  const updateRestaurant = useUpdateRestaurant();
   const [activeTab, setActiveTab] = useState('general');
   const [isSaving, setIsSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  // Form state
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [phone, setPhone] = useState('');
+  const [whatsapp, setWhatsapp] = useState('');
+  const [address, setAddress] = useState('');
+  const [city, setCity] = useState('');
+  const [state, setState] = useState('');
+  const [zipCode, setZipCode] = useState('');
+
+  // Pre-fill form when restaurant data loads
+  useEffect(() => {
+    if (restaurant) {
+      setName(restaurant.name || '');
+      setDescription(restaurant.description || '');
+      setPhone(restaurant.phone || '');
+      setWhatsapp(restaurant.whatsapp || '');
+      setAddress(restaurant.address || '');
+      setCity(restaurant.city || '');
+      setState(restaurant.state || '');
+      setZipCode(restaurant.zipCode || '');
+    }
+  }, [restaurant]);
 
   const handleSave = async () => {
     setIsSaving(true);
-    // Simulate save
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setIsSaving(false);
+    setSaveSuccess(false);
+    try {
+      await updateRestaurant.mutateAsync({
+        name: name || undefined,
+        description: description || undefined,
+        phone: phone || undefined,
+        whatsapp: whatsapp || undefined,
+        address: address || undefined,
+        city: city || undefined,
+        state: state || undefined,
+        zipCode: zipCode || undefined,
+      });
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 3000);
+    } catch {
+      // error handled by mutation
+    } finally {
+      setIsSaving(false);
+    }
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <Loader2 className="w-8 h-8 animate-spin text-primary-500" />
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-96 space-y-4">
+        <AlertTriangle className="w-12 h-12 text-amber-500" />
+        <p className="text-gray-600">Erro ao carregar configurações</p>
+        <button onClick={() => refetch()} className="btn-primary">
+          <RefreshCw className="w-4 h-4" />
+          Tentar novamente
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -41,16 +104,25 @@ export default function SettingsPage() {
           </h1>
           <p className="text-gray-600">Personalize seu restaurante</p>
         </div>
-        {canManage('settings') && (
-          <button 
-            onClick={handleSave}
-            disabled={isSaving}
-            className="btn-primary"
-          >
-            <Save className="w-5 h-5" />
-            {isSaving ? 'Salvando...' : 'Salvar Alterações'}
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {saveSuccess && (
+            <span className="text-sm text-green-600 font-medium">✓ Salvo com sucesso</span>
+          )}
+          {canManage('settings') && (
+            <button 
+              onClick={handleSave}
+              disabled={isSaving}
+              className="btn-primary"
+            >
+              {isSaving ? (
+                <Loader2 className="w-5 h-5 animate-spin" />
+              ) : (
+                <Save className="w-5 h-5" />
+              )}
+              {isSaving ? 'Salvando...' : 'Salvar Alterações'}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex gap-6">
@@ -88,8 +160,12 @@ export default function SettingsPage() {
                   Logo
                 </label>
                 <div className="flex items-center gap-4">
-                  <div className="w-20 h-20 bg-gray-100 rounded-xl flex items-center justify-center">
-                    <Store className="w-8 h-8 text-gray-400" />
+                  <div className="w-20 h-20 bg-gray-100 rounded-xl flex items-center justify-center overflow-hidden">
+                    {restaurant?.logoUrl ? (
+                      <img src={restaurant.logoUrl} alt="Logo" className="w-full h-full object-cover" />
+                    ) : (
+                      <Store className="w-8 h-8 text-gray-400" />
+                    )}
                   </div>
                   {canManage('settings') && (
                     <button className="btn-outline">
@@ -108,9 +184,24 @@ export default function SettingsPage() {
                 <input
                   type="text"
                   className="input"
-                  defaultValue={restaurant?.name || ''}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
                   disabled={!canManage('settings')}
                 />
+              </div>
+
+              {/* Slug (read only) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Slug (URL)
+                </label>
+                <input
+                  type="text"
+                  className="input bg-gray-50"
+                  value={restaurant?.slug || ''}
+                  disabled
+                />
+                <p className="text-xs text-gray-400 mt-1">O slug não pode ser alterado</p>
               </div>
 
               {/* Description */}
@@ -121,6 +212,8 @@ export default function SettingsPage() {
                 <textarea
                   className="input min-h-[100px]"
                   placeholder="Descreva seu restaurante..."
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
                   disabled={!canManage('settings')}
                 />
               </div>
@@ -135,6 +228,8 @@ export default function SettingsPage() {
                     type="tel"
                     className="input"
                     placeholder="(11) 3333-4444"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
                     disabled={!canManage('settings')}
                   />
                 </div>
@@ -146,6 +241,8 @@ export default function SettingsPage() {
                     type="tel"
                     className="input"
                     placeholder="(11) 99999-8888"
+                    value={whatsapp}
+                    onChange={(e) => setWhatsapp(e.target.value)}
                     disabled={!canManage('settings')}
                   />
                 </div>
@@ -160,6 +257,8 @@ export default function SettingsPage() {
                   type="text"
                   className="input"
                   placeholder="Rua, número, bairro"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
                   disabled={!canManage('settings')}
                 />
               </div>
@@ -173,6 +272,8 @@ export default function SettingsPage() {
                     type="text"
                     className="input"
                     placeholder="São Paulo"
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
                     disabled={!canManage('settings')}
                   />
                 </div>
@@ -184,6 +285,8 @@ export default function SettingsPage() {
                     type="text"
                     className="input"
                     placeholder="SP"
+                    value={state}
+                    onChange={(e) => setState(e.target.value)}
                     disabled={!canManage('settings')}
                   />
                 </div>
@@ -195,6 +298,8 @@ export default function SettingsPage() {
                     type="text"
                     className="input"
                     placeholder="01310-100"
+                    value={zipCode}
+                    onChange={(e) => setZipCode(e.target.value)}
                     disabled={!canManage('settings')}
                   />
                 </div>
@@ -271,4 +376,3 @@ export default function SettingsPage() {
     </div>
   );
 }
-

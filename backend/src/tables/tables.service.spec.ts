@@ -250,6 +250,70 @@ describe('TablesService', () => {
     });
   });
 
+  describe('forceReleaseTable', () => {
+    it('should throw NotFoundException for non-existent table', async () => {
+      mockPrismaService.table.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.forceReleaseTable('non-existent', 'r1'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should cancel all pending orders, deactivate sessions and release table', async () => {
+      mockPrismaService.table.findFirst.mockResolvedValue({
+        id: 't1',
+        number: 1,
+        name: 'Mesa 1',
+        sessions: [{ id: 's1' }, { id: 's2' }],
+      });
+      mockPrismaService.order.updateMany.mockResolvedValue({ count: 3 }); // 3 orders cancelled
+      mockPrismaService.tableSession.findMany.mockResolvedValue([{ id: 's1' }, { id: 's2' }]);
+      mockPrismaService.tableSession.updateMany.mockResolvedValue({ count: 2 });
+      mockPrismaService.table.update.mockResolvedValue({
+        id: 't1',
+        status: TableStatus.ACTIVE,
+      });
+
+      const result = await service.forceReleaseTable('t1', 'r1');
+
+      // Should cancel all non-final orders
+      expect(mockPrismaService.order.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            tableId: 't1',
+            status: {
+              in: [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.READY],
+            },
+          }),
+          data: expect.objectContaining({
+            status: OrderStatus.CANCELLED,
+          }),
+        }),
+      );
+
+      // Should deactivate sessions
+      expect(mockPrismaService.tableSession.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { tableId: 't1', isActive: true },
+          data: { isActive: false },
+        }),
+      );
+
+      // Should emit session:closed with force_closed reason
+      expect(mockWebsocketGateway.server.to).toHaveBeenCalledWith('table:t1');
+      expect(mockWebsocketGateway.server.emit).toHaveBeenCalledWith(
+        'session:closed',
+        expect.objectContaining({
+          reason: 'force_closed',
+        }),
+      );
+
+      // Should return cancelled count
+      expect(result.cancelledOrdersCount).toBe(3);
+      expect(result.closedSessionsCount).toBe(2);
+    });
+  });
+
   describe('delete', () => {
     it('should throw NotFoundException for non-existent table', async () => {
       mockPrismaService.table.findFirst.mockResolvedValue(null);

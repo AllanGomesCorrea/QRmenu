@@ -188,6 +188,21 @@ export class TablesController {
     return this.tablesService.releaseTable(id, restaurantId);
   }
 
+  @Post(':id/force-release')
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({ summary: 'Forçar liberação da mesa (cancela pedidos pendentes)' })
+  @ApiResponse({ status: 200, description: 'Mesa forçosamente liberada' })
+  @ApiResponse({ status: 404, description: 'Mesa não encontrada' })
+  async forceReleaseTable(
+    @Param('id') id: string,
+    @CurrentRestaurant() restaurantId: string | null,
+  ) {
+    if (!restaurantId) {
+      throw new ForbiddenException('Usuário não está vinculado a um restaurante');
+    }
+    return this.tablesService.forceReleaseTable(id, restaurantId);
+  }
+
   @Get(':id/qrcode')
   @ApiOperation({ summary: 'Obter QR Code da mesa' })
   @ApiQuery({ name: 'format', enum: ['dataurl', 'svg'], required: false })

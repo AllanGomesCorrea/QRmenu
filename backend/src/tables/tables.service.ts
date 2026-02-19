@@ -344,6 +344,93 @@ export class TablesService {
     });
   }
 
+  /**
+   * Force release table - cancels ALL pending/in-progress orders and frees the table.
+   * Used by ADMIN/SUPER_ADMIN to recover from bugs or force-close a table.
+   */
+  async forceReleaseTable(id: string, restaurantId: string) {
+    const table = await this.prisma.table.findFirst({
+      where: { id, restaurantId },
+      include: {
+        sessions: { where: { isActive: true } },
+      },
+    });
+
+    if (!table) {
+      throw new NotFoundException('Mesa não encontrada');
+    }
+
+    // Cancel all non-final orders (PENDING, CONFIRMED, PREPARING, READY)
+    const cancelledOrders = await this.prisma.order.updateMany({
+      where: {
+        tableId: id,
+        restaurantId,
+        status: {
+          in: [
+            OrderStatus.PENDING,
+            OrderStatus.CONFIRMED,
+            OrderStatus.PREPARING,
+            OrderStatus.READY,
+          ],
+        },
+      },
+      data: {
+        status: OrderStatus.CANCELLED,
+      },
+    });
+
+    // Get active session IDs before deactivating
+    const activeSessions = await this.prisma.tableSession.findMany({
+      where: { tableId: id, isActive: true },
+      select: { id: true },
+    });
+
+    // Deactivate all active sessions
+    await this.prisma.tableSession.updateMany({
+      where: { tableId: id, isActive: true },
+      data: { isActive: false },
+    });
+
+    // Notify all clients on this table
+    this.websocketGateway.server
+      .to(`table:${id}`)
+      .emit('session:closed', {
+        tableId: id,
+        tableNumber: table.number,
+        tableName: table.name,
+        reason: 'force_closed',
+        message: 'Mesa foi encerrada pelo administrador.',
+        timestamp: new Date().toISOString(),
+      });
+
+    // Also emit to individual session rooms as fallback
+    for (const session of activeSessions) {
+      this.websocketGateway.server
+        .to(`session:${session.id}`)
+        .emit('session:closed', {
+          sessionId: session.id,
+          tableId: id,
+          tableNumber: table.number,
+          tableName: table.name,
+          reason: 'force_closed',
+          message: 'Mesa foi encerrada pelo administrador.',
+          timestamp: new Date().toISOString(),
+        });
+    }
+
+    // Set table status to ACTIVE (available)
+    const updated = await this.prisma.table.update({
+      where: { id },
+      data: { status: TableStatus.ACTIVE },
+    });
+
+    return {
+      ...updated,
+      cancelledOrdersCount: cancelledOrders.count,
+      closedSessionsCount: activeSessions.length,
+    };
+  }
+
   async getQRCode(id: string, restaurantId: string, format: 'dataurl' | 'svg' = 'dataurl') {
     const table = await this.prisma.table.findFirst({
       where: { id, restaurantId },

@@ -16,9 +16,20 @@ export class TenantInterceptor implements NestInterceptor {
     const request = context.switchToHttp().getRequest();
     const user = request.user;
 
-    if (user && user.restaurantId && request.body) {
-      // Inject restaurantId into body for POST/PUT/PATCH requests
-      request.body.restaurantId = user.restaurantId;
+    if (user && request.body) {
+      // Super Admin: use x-restaurant-id header if provided
+      if (user.isSuperAdmin) {
+        const headerRestaurantId = request.headers['x-restaurant-id'];
+        if (headerRestaurantId) {
+          request.body.restaurantId = headerRestaurantId;
+          return next.handle();
+        }
+      }
+
+      // Regular users: inject their restaurantId
+      if (user.restaurantId) {
+        request.body.restaurantId = user.restaurantId;
+      }
     }
 
     return next.handle();
