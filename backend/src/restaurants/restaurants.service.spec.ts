@@ -106,6 +106,51 @@ describe('RestaurantsService', () => {
       const result = await service.update('r1', { name: 'Updated Name' } as any);
       expect(result.name).toBe('Updated Name');
     });
+
+    it('should update logoUrl and bannerUrl', async () => {
+      mockPrismaService.restaurant.findUnique.mockResolvedValue({ id: 'r1' });
+      mockPrismaService.restaurant.update.mockResolvedValue({
+        id: 'r1',
+        logoUrl: 'https://example.com/logo.png',
+        bannerUrl: 'https://example.com/banner.jpg',
+      });
+
+      const result = await service.update('r1', {
+        logoUrl: 'https://example.com/logo.png',
+        bannerUrl: 'https://example.com/banner.jpg',
+      } as any);
+
+      expect(mockPrismaService.restaurant.update).toHaveBeenCalledWith({
+        where: { id: 'r1' },
+        data: expect.objectContaining({
+          logoUrl: 'https://example.com/logo.png',
+          bannerUrl: 'https://example.com/banner.jpg',
+        }),
+      });
+      expect(result.logoUrl).toBe('https://example.com/logo.png');
+      expect(result.bannerUrl).toBe('https://example.com/banner.jpg');
+    });
+
+    it('should clear logoUrl by setting empty string', async () => {
+      mockPrismaService.restaurant.findUnique.mockResolvedValue({
+        id: 'r1',
+        logoUrl: 'https://example.com/old-logo.png',
+      });
+      mockPrismaService.restaurant.update.mockResolvedValue({
+        id: 'r1',
+        logoUrl: '',
+      });
+
+      const result = await service.update('r1', { logoUrl: '' } as any);
+
+      expect(mockPrismaService.restaurant.update).toHaveBeenCalledWith({
+        where: { id: 'r1' },
+        data: expect.objectContaining({
+          logoUrl: '',
+        }),
+      });
+      expect(result.logoUrl).toBe('');
+    });
   });
 
   describe('findAll', () => {

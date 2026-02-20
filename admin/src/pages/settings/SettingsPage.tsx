@@ -4,10 +4,12 @@ import {
   Clock, 
   Bell,
   Save,
-  Upload,
+  Image,
+  Link,
   Loader2,
   RefreshCw,
   AlertTriangle,
+  X,
 } from 'lucide-react';
 import { usePermissions } from '../../hooks/usePermissions';
 import { useMyRestaurant, useUpdateRestaurant } from '../../hooks/useRestaurant';
@@ -29,18 +31,24 @@ export default function SettingsPage() {
   // Form state
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [logoUrl, setLogoUrl] = useState('');
+  const [bannerUrl, setBannerUrl] = useState('');
   const [phone, setPhone] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
   const [address, setAddress] = useState('');
   const [city, setCity] = useState('');
   const [state, setState] = useState('');
   const [zipCode, setZipCode] = useState('');
+  const [logoError, setLogoError] = useState(false);
+  const [bannerError, setBannerError] = useState(false);
 
   // Pre-fill form when restaurant data loads
   useEffect(() => {
     if (restaurant) {
       setName(restaurant.name || '');
       setDescription(restaurant.description || '');
+      setLogoUrl(restaurant.logoUrl || '');
+      setBannerUrl(restaurant.bannerUrl || '');
       setPhone(restaurant.phone || '');
       setWhatsapp(restaurant.whatsapp || '');
       setAddress(restaurant.address || '');
@@ -57,6 +65,8 @@ export default function SettingsPage() {
       await updateRestaurant.mutateAsync({
         name: name || undefined,
         description: description || undefined,
+        logoUrl: logoUrl || undefined,
+        bannerUrl: bannerUrl || undefined,
         phone: phone || undefined,
         whatsapp: whatsapp || undefined,
         address: address || undefined,
@@ -154,24 +164,110 @@ export default function SettingsPage() {
                 Informações do Restaurante
               </h2>
 
-              {/* Logo Upload */}
+              {/* Logo URL */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Logo
+                  <div className="flex items-center gap-1">
+                    <Image className="w-4 h-4" />
+                    Logo do Restaurante
+                  </div>
                 </label>
-                <div className="flex items-center gap-4">
-                  <div className="w-20 h-20 bg-gray-100 rounded-xl flex items-center justify-center overflow-hidden">
-                    {restaurant?.logoUrl ? (
-                      <img src={restaurant.logoUrl} alt="Logo" className="w-full h-full object-cover" />
+                <div className="flex items-start gap-4">
+                  {/* Preview */}
+                  <div className="w-20 h-20 bg-gray-100 rounded-xl flex-shrink-0 flex items-center justify-center overflow-hidden border border-gray-200">
+                    {logoUrl && !logoError ? (
+                      <img
+                        src={logoUrl}
+                        alt="Logo"
+                        className="w-full h-full object-cover"
+                        onError={() => setLogoError(true)}
+                      />
                     ) : (
                       <Store className="w-8 h-8 text-gray-400" />
                     )}
                   </div>
-                  {canManage('settings') && (
-                    <button className="btn-outline">
-                      <Upload className="w-5 h-5" />
-                      Enviar Logo
-                    </button>
+                  {/* URL Input */}
+                  <div className="flex-1">
+                    <div className="relative">
+                      <Link className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <input
+                        type="url"
+                        className="input pl-9 pr-9 w-full"
+                        placeholder="https://exemplo.com/logo.png"
+                        value={logoUrl}
+                        onChange={(e) => { setLogoUrl(e.target.value); setLogoError(false); }}
+                        disabled={!canManage('settings')}
+                      />
+                      {logoUrl && canManage('settings') && (
+                        <button
+                          type="button"
+                          onClick={() => { setLogoUrl(''); setLogoError(false); }}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1">
+                      Cole a URL de uma imagem (PNG, JPG, WebP). A imagem será exibida no cardápio.
+                    </p>
+                    {logoError && (
+                      <p className="text-xs text-error-500 mt-1">
+                        Não foi possível carregar a imagem. Verifique a URL.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Banner URL */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <div className="flex items-center gap-1">
+                    <Image className="w-4 h-4" />
+                    Banner do Restaurante
+                  </div>
+                </label>
+                <div className="space-y-2">
+                  {/* Preview */}
+                  {bannerUrl && !bannerError && (
+                    <div className="w-full h-32 bg-gray-100 rounded-xl overflow-hidden border border-gray-200">
+                      <img
+                        src={bannerUrl}
+                        alt="Banner"
+                        className="w-full h-full object-cover"
+                        onError={() => setBannerError(true)}
+                      />
+                    </div>
+                  )}
+                  {/* URL Input */}
+                  <div className="relative">
+                    <Link className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                      type="url"
+                      className="input pl-9 pr-9 w-full"
+                      placeholder="https://exemplo.com/banner.jpg"
+                      value={bannerUrl}
+                      onChange={(e) => { setBannerUrl(e.target.value); setBannerError(false); }}
+                      disabled={!canManage('settings')}
+                    />
+                    {bannerUrl && canManage('settings') && (
+                      <button
+                        type="button"
+                        onClick={() => { setBannerUrl(''); setBannerError(false); }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-400">
+                    Imagem de capa exibida no topo do cardápio. Recomendado: 1200×400px.
+                  </p>
+                  {bannerError && (
+                    <p className="text-xs text-error-500">
+                      Não foi possível carregar a imagem. Verifique a URL.
+                    </p>
                   )}
                 </div>
               </div>
